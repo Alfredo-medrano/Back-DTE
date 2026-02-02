@@ -91,9 +91,9 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         uniMedida = item.unidadMedida; // Permitir override manual
     }
 
-    // NORMATIVA MH v2: Para Factura Electrónica (tipoDte 01), tributos debe ser NULL
-    // El IVA se calcula implícitamente (precio ya incluye IVA)
-    const tributos = null;
+    // NORMATIVA MH v1 Legacy: Para Factura Electrónica (tipoDte 01), 
+    // tributos en cuerpoDocumento debe ser array con código "20" (IVA)
+    const tributos = ['20'];
 
     return {
         numItem: numItem,
@@ -154,8 +154,16 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
     const montoTotalOperacion = redondear(subTotal + totalIva);
     const totalPagar = redondear(montoTotalOperacion);
 
-    // NORMATIVA MH v2: Para Factura Electrónica (tipoDte 01), tributos debe ser NULL
-    // El IVA se maneja implícitamente con el campo totalIva
+    // NORMATIVA MH v1 Legacy - Esquema antiguo para Factura Electrónica (01)
+
+    // Tributos array para resumen (v1 Legacy)
+    const tributosResumen = totalGravada > 0 ? [
+        {
+            codigo: '20',
+            descripcion: 'Impuesto al Valor Agregado 13%',
+            valor: totalIva,
+        }
+    ] : null;
 
     return {
         totalNoSuj: totalNoSuj,
@@ -167,19 +175,20 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
         descuGravada: totalDescuento,
         porcentajeDescuento: 0.00,
         totalDescu: totalDescuento,
-        tributos: null,              // NULL para Factura Electrónica v2
+        tributos: tributosResumen,       // v1 Legacy: array de tributos
         subTotal: subTotal,
-        totalIva: totalIva,           // REQUERIDO en v2
-        ivaRete1: 0.00,
-        reteRenta: 0.00,
+        ivaRete1: 0.00,                  // v1 Legacy: ivaRete1 (no ivaRete)
+        reteRenta: 0.00,                 // v1 Legacy: REQUERIDO
         montoTotalOperacion: montoTotalOperacion,
         totalNoGravado: 0.00,
         totalPagar: totalPagar,
         totalLetras: numeroALetras(totalPagar),
+        totalIva: totalIva,
         saldoFavor: 0.00,
         condicionOperacion: condicionOperacion,
-        pagos: null,                 // null para condición Contado
+        pagos: null,                     // null para condición Contado
         numPagoElectronico: null,
+        // v1 Legacy: SIN observaciones
     };
 };
 

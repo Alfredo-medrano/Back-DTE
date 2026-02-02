@@ -96,11 +96,13 @@ const crearFactura = async (req, res) => {
         // ========================================
         const codigoGeneracion = generarCodigoGeneracion();
 
-        // NORMATIVA v2: numeroControl usa formato DTE-XX-M###P###-XXXXXXXXXXXXXXX
-        // Donde M###=codEstableMH y P###=codPuntoVentaMH
-        const codEstableMH = emisor.codEstableMH || 'M001';
-        const codPuntoVentaMH = emisor.codPuntoVentaMH || 'P001';
-        const codigoEstablecimiento = codEstableMH + codPuntoVentaMH; // Ejemplo: M001P001
+        // v1: numeroControl formato DTE-XX-XXXXXXXX-XXXXXXXXXXXXXXX
+        // Si tiene códigos MH usa M001P001, sino usa 00000001
+        const codEstableMH = emisor.codEstableMH || null;
+        const codPuntoVentaMH = emisor.codPuntoVentaMH || null;
+        const codigoEstablecimiento = (codEstableMH && codPuntoVentaMH)
+            ? codEstableMH + codPuntoVentaMH
+            : '00000001';
         const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
         const fechaEmision = generarFechaActual();
         const horaEmision = generarHoraEmision();
@@ -127,15 +129,15 @@ const crearFactura = async (req, res) => {
         }
 
         // ========================================
-        // 4. CONSTRUIR DOCUMENTO DTE (Anexo II)
+        // 4. CONSTRUIR DOCUMENTO DTE (Anexo II - FE v1 Legacy)
         // ========================================
         const documentoDTE = {
             // --- IDENTIFICACIÓN ---
             identificacion: {
-                version: 2,                                    // Versión del DTE (v2 requerido por MH)
+                version: 1,                                    // v1 Legacy para Factura Electrónica
                 ambiente: config.emisor.ambiente,              // "00"=Pruebas, "01"=Producción
                 tipoDte: tipoDte,                              // "01"=FE
-                numeroControl: numeroControl,                   // DTE-01-XXXXXXXX-XXXXXXXXXXXXXXX
+                numeroControl: numeroControl,
                 codigoGeneracion: codigoGeneracion,            // UUID en mayúsculas
                 tipoModelo: 1,                                 // 1=Normal
                 tipoOperacion: 1,                              // 1=Transmisión normal
@@ -149,7 +151,7 @@ const crearFactura = async (req, res) => {
             // --- DOCUMENTO RELACIONADO ---
             documentoRelacionado: null,
 
-            // --- EMISOR (v2 requiere campos adicionales) ---
+            // --- EMISOR ---
             emisor: {
                 nit: emisor.nit,
                 nrc: emisor.nrc,
@@ -160,18 +162,20 @@ const crearFactura = async (req, res) => {
                     ? emisor.nombreComercial.toUpperCase()
                     : null,
                 tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
+                // Dirección CON distrito (requerido en v1)
                 direccion: {
-                    departamento: emisor.direccion?.departamento || '14',
-                    municipio: emisor.direccion?.municipio || '04',
+                    departamento: emisor.direccion?.departamento || '06',
+                    municipio: emisor.direccion?.municipio || '14',
+                    distrito: emisor.direccion?.distrito || '01',   // REQUERIDO
                     complemento: (emisor.direccion?.complemento || '').toUpperCase(),
                 },
                 telefono: emisor.telefono,
                 correo: emisor.correo,
-                // Campos requeridos v2
-                codEstableMH: emisor.codEstableMH || '0001',    // Código establecimiento MH
-                codEstable: emisor.codEstable || '0001',        // Código establecimiento interno
-                codPuntoVentaMH: emisor.codPuntoVentaMH || '0001', // Código punto venta MH
-                codPuntoVenta: emisor.codPuntoVenta || '0001',  // Código punto venta interno
+                // Códigos MH (pueden ser null si no tienes asignados)
+                codEstableMH: emisor.codEstableMH || null,
+                codEstable: emisor.codEstable || null,
+                codPuntoVentaMH: emisor.codPuntoVentaMH || null,
+                codPuntoVenta: emisor.codPuntoVenta || null,
             },
 
             // --- RECEPTOR ---
@@ -184,9 +188,11 @@ const crearFactura = async (req, res) => {
                 descActividad: receptor.descActividad
                     ? receptor.descActividad.toUpperCase()
                     : null,
+                // Dirección CON distrito (requerido en v1)
                 direccion: {
                     departamento: receptor.direccion?.departamento || '06',
                     municipio: receptor.direccion?.municipio || '14',
+                    distrito: receptor.direccion?.distrito || '01',    // REQUERIDO
                     complemento: (receptor.direccion?.complemento || '').toUpperCase(),
                 },
                 telefono: receptor.telefono || null,
@@ -205,7 +211,7 @@ const crearFactura = async (req, res) => {
             // --- RESUMEN ---
             resumen: resumen,
 
-            // --- EXTENSIÓN ---
+            // --- EXTENSIÓN (REQUERIDO en v1 Legacy) ---
             extension: null,
 
             // --- APÉNDICE ---
@@ -247,7 +253,7 @@ const crearFactura = async (req, res) => {
             resultadoFirma.firma,
             config.emisor.ambiente,
             tipoDte,
-            2,  // versión 2 del esquema MH
+            1,  // versión 1 para FE
             codigoGeneracion  // UUID del documento
         );
 
