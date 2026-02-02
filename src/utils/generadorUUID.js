@@ -32,10 +32,14 @@ const generarCodigoGeneracion = () => {
  * @param {number} correlativo - Número correlativo
  * @returns {string} Número de control formateado
  */
-const generarNumeroControl = (tipoDocumento, codigoEstablecimiento, correlativo) => {
+const generarNumeroControl = (tipoDocumento, codigoEstablecimiento, correlativo, codPuntoVenta = null) => {
     const prefijo = 'DTE';
     const tipo = tipoDocumento.padStart(2, '0');
-    const establecimiento = codigoEstablecimiento.padStart(8, '0');
+
+    // NORMATIVA v2: El código de establecimiento combina codEstableMH + codPuntoVentaMH
+    // Formato: M###P### donde ### es el código de 4 dígitos
+    // O simplemente 8 caracteres alfanuméricos
+    const establecimiento = codigoEstablecimiento.substring(0, 8).padEnd(8, '0');
     const numCorrelativo = correlativo.toString().padStart(15, '0');
 
     return `${prefijo}-${tipo}-${establecimiento}-${numCorrelativo}`;

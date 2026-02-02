@@ -25,90 +25,94 @@ const dockerClient = axios.create({
  */
 const verificarEstado = async () => {
     try {
-        const response = await dockerClient.get('/status');
+        // Intentar hacer una petición simple al firmador
+        // El firmador SVFE puede no tener endpoint /status, pero si responde (aunque sea 404)
+        // significa que está activo
+        const response = await dockerClient.get('/', {
+            validateStatus: (status) => status < 500, // Aceptar cualquier status < 500
+        });
+
         return {
             online: true,
-            mensaje: 'Docker Firmador activo',
+            mensaje: 'Docker Firmador activo y accesible',
+            status: response.status,
             data: response.data,
         };
     } catch (error) {
-        // El firmador puede no tener endpoint /status, intentar otra forma
-        try {
-            // Intentar con un ping simple
-            const response = await dockerClient.get('/');
-            return {
-                online: true,
-                mensaje: 'Docker Firmador responde',
-                data: response.data,
-            };
-        } catch (innerError) {
+        // Si es error de red (ECONNREFUSED, ETIMEDOUT), el firmador NO está activo
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
             return {
                 online: false,
-                mensaje: 'Docker Firmador no responde',
+                mensaje: 'Docker Firmador no responde - contenedor probablemente detenido',
                 error: error.message,
             };
         }
+
+        // Si es otro tipo de error HTTP, el firmador SÍ está respondiendo
+        // (aunque el endpoint específico no exista)
+        if (error.response) {
+            return {
+                online: true,
+                mensaje: 'Docker Firmador activo (endpoint verificación no disponible)',
+                status: error.response.status,
+            };
+        }
+
+        // Error desconocido
+        return {
+            online: false,
+            mensaje: 'Error al verificar firmador',
+            error: error.message,
+        };
     }
 };
 
 /**
- * Firma un documento JSON con el certificado digital
- * @param {object} documento - JSON del documento a firmar (estructura DTE)
- * @param {string} nit - NIT del emisor
- * @param {string} passwordPri - Contraseña de la clave privada
- * @returns {Promise<object>} { firma: string (JWS), error?: string }
+ * Firma un documento DTE con el contenedor Docker
+ * @param {object} documento - Documento JSON a firmar
+ * @param {string} nit - NIT del emisor (SIN RELLENO, usar formato original)
+ * @param {string} password - Contraseña de la llave privada
+ * @returns {Promise<object>} Documento firmado en formato JWS
  */
-const firmarDocumento = async (documento, nit, passwordPri) => {
+const firmarDocumento = async (documento, nit, password) => {
     try {
-        // Ajuste de NIT: El firmador SVFE suele requerir 14 dígitos.
-        // Si es homologado (9 dígitos), probamos rellenando con ceros a la izquierda.
-        let nitFormateado = String(nit).trim().replace(/-/g, ''); // Quitar guiones
+        console.log('📝 Enviando documento a firmar (DEBUG)...');
+        console.log('   URL Docker:', config.docker.url + '/firmardocumento/');
+        console.log(`   NIT: '${nit}'`);
+        console.log(`   Password: '******'`);
 
-        if (nitFormateado.length < 14) {
-            console.log(`⚠️ NIT corto (${nitFormateado.length}), rellenando con ceros a la izquierda...`);
-            nitFormateado = nitFormateado.padStart(14, '0');
-        }
-
-        // Estructura esperada por el Firmador SVFE
+        // Preparar payload para el firmador
         const payload = {
-            nit: nitFormateado,
+            nit: nit,              // ✅ Usar NIT original SIN RELLENO
             activo: true,
-            passwordPri: passwordPri,
+            passwordPri: password,
             dteJson: documento,
         };
 
-        console.log('📝 Enviando documento a firmar (DEBUG)...');
-        console.log(`   URL Docker: ${dockerClient.defaults.baseURL}/firmardocumento/`);
-        console.log(`   NIT Original: '${nit}'`);
-        console.log(`   NIT Enviado:  '${payload.nit}'`);
-        console.log(`   Password: '${passwordPri ? '******' : 'MISSING'}'`);
-
         const response = await dockerClient.post('/firmardocumento/', payload);
 
+        // El firmador devuelve el JWS en response.data.body
         if (response.data && response.data.body) {
             console.log('✅ Documento firmado exitosamente');
             return {
                 exito: true,
-                firma: response.data.body, // El JWS firmado
+                firma: response.data.body,
                 mensaje: 'Documento firmado correctamente',
             };
         }
 
-        // Si no hay body, revisar la respuesta completa
         return {
-            exito: true,
-            firma: response.data,
-            mensaje: 'Documento procesado',
+            exito: false,
+            error: 'Respuesta del firmador sin body',
+            data: response.data,
         };
 
     } catch (error) {
-        console.error('❌ Error al firmar documento:', error.message);
-
+        console.error('❌ Error al firmar:', error.message);
         return {
             exito: false,
-            firma: null,
             error: error.response?.data || error.message,
-            mensaje: 'Error al firmar el documento',
+            mensaje: 'Error al firmar documento',
         };
     }
 };

@@ -14,7 +14,7 @@ const config = {
     // Docker Firmador
     docker: {
         url: process.env.DOCKER_FIRMADOR_URL || 'http://localhost:8113',
-        timeout: 30000, // 30 segundos
+        timeout: 30000, // 30 segundos para firma
     },
 
     // Ministerio de Hacienda
@@ -24,6 +24,10 @@ const config = {
         claveApi: process.env.CLAVE_API,
         clavePublica: process.env.CLAVE_PUBLICA,
         clavePrivada: process.env.CLAVE_PRIVADA,
+        // NORMATIVA MH: Timeout máximo de 8 segundos para respuesta del API
+        timeout: 8000,
+        // NORMATIVA MH: Máximo 2 reintentos antes de contingencia
+        maxReintentos: 2,
     },
 
     // Emisor

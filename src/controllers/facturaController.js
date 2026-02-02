@@ -95,7 +95,13 @@ const crearFactura = async (req, res) => {
         // 1. GENERAR IDENTIFICADORES ÚNICOS
         // ========================================
         const codigoGeneracion = generarCodigoGeneracion();
-        const numeroControl = generarNumeroControl(tipoDte, '00000001', correlativo);
+
+        // NORMATIVA v2: numeroControl usa formato DTE-XX-M###P###-XXXXXXXXXXXXXXX
+        // Donde M###=codEstableMH y P###=codPuntoVentaMH
+        const codEstableMH = emisor.codEstableMH || 'M001';
+        const codPuntoVentaMH = emisor.codPuntoVentaMH || 'P001';
+        const codigoEstablecimiento = codEstableMH + codPuntoVentaMH; // Ejemplo: M001P001
+        const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
         const fechaEmision = generarFechaActual();
         const horaEmision = generarHoraEmision();
 
@@ -126,7 +132,7 @@ const crearFactura = async (req, res) => {
         const documentoDTE = {
             // --- IDENTIFICACIÓN ---
             identificacion: {
-                version: 1,                                    // Versión del DTE
+                version: 2,                                    // Versión del DTE (v2 requerido por MH)
                 ambiente: config.emisor.ambiente,              // "00"=Pruebas, "01"=Producción
                 tipoDte: tipoDte,                              // "01"=FE
                 numeroControl: numeroControl,                   // DTE-01-XXXXXXXX-XXXXXXXXXXXXXXX
@@ -143,7 +149,7 @@ const crearFactura = async (req, res) => {
             // --- DOCUMENTO RELACIONADO ---
             documentoRelacionado: null,
 
-            // --- EMISOR ---
+            // --- EMISOR (v2 requiere campos adicionales) ---
             emisor: {
                 nit: emisor.nit,
                 nrc: emisor.nrc,
@@ -161,6 +167,11 @@ const crearFactura = async (req, res) => {
                 },
                 telefono: emisor.telefono,
                 correo: emisor.correo,
+                // Campos requeridos v2
+                codEstableMH: emisor.codEstableMH || '0001',    // Código establecimiento MH
+                codEstable: emisor.codEstable || '0001',        // Código establecimiento interno
+                codPuntoVentaMH: emisor.codPuntoVentaMH || '0001', // Código punto venta MH
+                codPuntoVenta: emisor.codPuntoVenta || '0001',  // Código punto venta interno
             },
 
             // --- RECEPTOR ---
@@ -203,6 +214,10 @@ const crearFactura = async (req, res) => {
 
         console.log('✅ Documento DTE construido según Anexo II');
 
+        // DEBUG: Mostrar JSON completo para verificar estructura
+        console.log('📋 DEBUG - JSON COMPLETO A ENVIAR:');
+        console.log(JSON.stringify(documentoDTE, null, 2));
+
         // ========================================
         // 5. FIRMAR DOCUMENTO CON DOCKER
         // ========================================
@@ -232,7 +247,8 @@ const crearFactura = async (req, res) => {
             resultadoFirma.firma,
             config.emisor.ambiente,
             tipoDte,
-            1  // versión
+            2,  // versión 2 del esquema MH
+            codigoGeneracion  // UUID del documento
         );
 
         // ========================================

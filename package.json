@@ -6,7 +6,15 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "node tests/run_tests.js"
+    "test": "node tests/run_tests.js",
+    "test:env": "node scripts/verificar_entorno.js",
+    "test:all": "node scripts/ejecutar_suite_completa.js",
+    "test:factura": "node tests/run_tests.js --tipo=01",
+    "test:ccf": "node tests/run_tests.js --tipo=03",
+    "test:credito": "node tests/run_tests.js --tipo=05",
+    "test:excluido": "node tests/run_tests.js --tipo=14",
+    "test:invalidacion": "node tests/test_invalidacion.js",
+    "test:consulta": "node tests/test_consulta.js"
   },
   "keywords": [
     "facturacion",

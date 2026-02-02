@@ -67,34 +67,53 @@ const calcularIVALinea = (montoTotal, precioIncluyeIva = true) => {
  * @returns {object} Línea formateada según Anexo II
  */
 const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
-    const cantidad = redondear8(item.cantidad);
-    const precioUni = redondear8(item.precioUnitario);
-    const montoTotal = redondear(cantidad * precioUni);
-    const descuento = redondear(item.descuento || 0);
-    const montoNeto = redondear(montoTotal - descuento);
+    const tipoItem = item.tipoItem || 1; // 1=Bienes, 2=Servicios, 3=Ambos, 4=Otros
+
+    // Calcular con precisión
+    const cantidad = parseFloat(item.cantidad);
+    const precioUni = parseFloat(item.precioUnitario);
+    const montoTotal = cantidad * precioUni;
+    const descuento = parseFloat(item.descuento || 0);
+    const montoNeto = montoTotal - descuento;
 
     // Para FE (tipoDte 01), el precio incluye IVA
     const precioIncluyeIva = tipoDte === '01';
     const { ventaGravada, ivaItem } = calcularIVALinea(montoNeto, precioIncluyeIva);
 
+    // CRÍTICO: Unidad de medida según tipo de item
+    // 59 = Unidad (para bienes)
+    // 99 = Servicio (para servicios)
+    let uniMedida = 59; // Default para bienes
+    if (tipoItem === 2) {
+        uniMedida = 99; // Servicios DEBEN usar código 99
+    }
+    if (item.unidadMedida) {
+        uniMedida = item.unidadMedida; // Permitir override manual
+    }
+
+    // NORMATIVA MH v2: Para Factura Electrónica (tipoDte 01), tributos debe ser NULL
+    // El IVA se calcula implícitamente (precio ya incluye IVA)
+    const tributos = null;
+
     return {
         numItem: numItem,
-        tipoItem: item.tipoItem || 1,        // 1=Bienes, 2=Servicios
+        tipoItem: tipoItem,
         numeroDocumento: null,
-        cantidad: cantidad,
+        // NORMATIVA MH: Cuerpo del documento usa HASTA 8 DECIMALES
+        cantidad: redondear(cantidad, 8),
         codigo: item.codigo || null,
         codTributo: null,
-        uniMedida: item.unidadMedida || 59,  // 59=Unidad
+        uniMedida: uniMedida,
         descripcion: item.descripcion.toUpperCase(),
-        precioUni: precioUni,
-        montoDescu: descuento,
+        precioUni: redondear(precioUni, 8),     // 8 decimales según normativa
+        montoDescu: redondear(descuento, 8),    // 8 decimales según normativa
         ventaNoSuj: 0.00,
         ventaExenta: 0.00,
-        ventaGravada: ventaGravada,
-        tributos: null,
+        ventaGravada: redondear(ventaGravada, 2), // 2 decimales para montos finales
+        tributos: tributos,                       // Array ["20"] para IVA
         psv: 0.00,
         noGravado: 0.00,
-        ivaItem: ivaItem,
+        ivaItem: redondear(ivaItem, 2),
     };
 };
 
@@ -119,7 +138,7 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
         totalIva += linea.ivaItem || 0;
     });
 
-    // Redondear todo a 2 decimales para el resumen
+    // NORMATIVA MH: Resumen usa EXACTAMENTE 2 decimales
     totalNoSuj = redondear(totalNoSuj);
     totalExenta = redondear(totalExenta);
     totalGravada = redondear(totalGravada);
@@ -127,9 +146,16 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
     totalIva = redondear(totalIva);
 
     const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
-    const subTotal = subTotalVentas; // Para FE es igual
-    const montoTotalOperacion = redondear(subTotal);
+    const subTotal = subTotalVentas;
+
+    // IMPORTANTE: Para Factura Electrónica (FE), el precio ya incluye IVA
+    // Por lo tanto: montoTotalOperacion = subTotal + IVA (que es el monto original del cliente)
+    // Esto equivale a: ventaGravada + IVA = precio original
+    const montoTotalOperacion = redondear(subTotal + totalIva);
     const totalPagar = redondear(montoTotalOperacion);
+
+    // NORMATIVA MH v2: Para Factura Electrónica (tipoDte 01), tributos debe ser NULL
+    // El IVA se maneja implícitamente con el campo totalIva
 
     return {
         totalNoSuj: totalNoSuj,
@@ -141,9 +167,9 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
         descuGravada: totalDescuento,
         porcentajeDescuento: 0.00,
         totalDescu: totalDescuento,
-        tributos: null,
+        tributos: null,              // NULL para Factura Electrónica v2
         subTotal: subTotal,
-        ivaPerci1: 0.00,
+        totalIva: totalIva,           // REQUERIDO en v2
         ivaRete1: 0.00,
         reteRenta: 0.00,
         montoTotalOperacion: montoTotalOperacion,

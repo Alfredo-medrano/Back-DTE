@@ -19,9 +19,10 @@ let tokenCache = {
 };
 
 // Cliente HTTP para Hacienda
+// NORMATIVA MH: Timeout máximo de 8 segundos para respuesta del API
 const mhClient = axios.create({
     baseURL: config.mh.apiUrl,
-    timeout: 60000, // 60 segundos (Hacienda puede ser lenta)
+    timeout: config.mh.timeout || 8000, // Normativa: máximo 8 segundos
     headers: {
         'Content-Type': 'application/json',
     },
@@ -107,9 +108,10 @@ const autenticar = async () => {
  * @param {string} ambiente - '00' = Pruebas, '01' = Producción
  * @param {string} tipoDte - Tipo de documento (01=Factura, 03=CCF, etc.)
  * @param {number} version - Versión del documento (1, 2, 3...)
+ * @param {string} codigoGeneracion - UUID del documento (requerido por MH)
  * @returns {Promise<object>} Respuesta de Hacienda con sello
  */
-const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', version = 1) => {
+const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', version = 1, codigoGeneracion = null) => {
     try {
         // Obtener token primero
         const auth = await autenticar();
@@ -125,11 +127,14 @@ const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', vers
         console.log(`   Ambiente: ${ambiente}`);
         console.log(`   Tipo DTE: ${tipoDte}`);
         console.log(`   Versión: ${version}`);
+        console.log(`   Código Generación: ${codigoGeneracion}`);
 
-        // Estructura del envío a Hacienda
+        // Estructura del envío a Hacienda según normativa
+        // NOTA: El codigoGeneracion puede estar dentro del documento JWS
+        // El payload principal solo necesita estos campos
         const payload = {
             ambiente: ambiente,
-            idEnvio: Date.now().toString(), // Debe ser string
+            idEnvio: Date.now().toString(),
             version: parseInt(version),
             tipoDte: tipoDte,
             documento: documentoFirmado,
@@ -139,7 +144,7 @@ const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', vers
 
         const response = await mhClient.post('/fesv/recepciondte', payload, {
             headers: {
-                'Authorization': `Bearer ${auth.token}`,
+                'Authorization': auth.token, // El token ya incluye "Bearer "
                 'Content-Type': 'application/json',
             },
         });
@@ -168,12 +173,19 @@ const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', vers
             mensaje: 'DTE rechazado por Hacienda',
         };
 
+
     } catch (error) {
         console.error('❌ Error al enviar DTE:', error.message);
+
+        // Mostrar detalles completos del error del MH
+        if (error.response?.data) {
+            console.error('📋 Detalles del error MH:', JSON.stringify(error.response.data, null, 2));
+        }
 
         return {
             exito: false,
             error: error.response?.data || error.message,
+            errorCompleto: error.response?.data,
             mensaje: 'Error de comunicación con Hacienda',
         };
     }
