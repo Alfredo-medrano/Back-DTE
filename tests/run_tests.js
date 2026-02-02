@@ -28,6 +28,10 @@ const {
     calcularLineaProducto,
     calcularResumenFactura
 } = require('../src/utils/calculadorIVA');
+const {
+    obtenerConfigDTE,
+    obtenerVersionDTE,
+} = require('../src/config/tiposDTE');
 const config = require('../src/config/env');
 const dataGenerator = require('./data_generator');
 
@@ -45,10 +49,12 @@ let estadisticas = {
 
 /**
  * Construye la estructura base de identificación del DTE
+ * Usa versión dinámica según tiposDTE.js
  */
 const construirIdentificacion = (tipoDte, numeroControl, codigoGeneracion) => {
+    const versionDte = obtenerVersionDTE(tipoDte);
     return {
-        version: 1,
+        version: versionDte,             // Versión dinámica según tipo DTE
         ambiente: config.emisor.ambiente,
         tipoDte: tipoDte,
         numeroControl: numeroControl,
@@ -83,7 +89,7 @@ const probarFacturaElectronica = async (numeroTest = 1) => {
         const cuerpoDocumento = items.map((item, index) =>
             calcularLineaProducto(item, index + 1, '01')
         );
-        const resumen = calcularResumenFactura(cuerpoDocumento, 1);
+        const resumen = calcularResumenFactura(cuerpoDocumento, 1, '01'); // Pasar tipoDte
 
         const documentoDTE = {
             identificacion: construirIdentificacion('01', numeroControl, codigoGeneracion),
@@ -144,7 +150,7 @@ const probarComprobanteCredFiscal = async (numeroTest = 1) => {
         const cuerpoDocumento = items.map((item, index) =>
             calcularLineaProducto(item, index + 1, '03')
         );
-        const resumen = calcularResumenFactura(cuerpoDocumento, 1);
+        const resumen = calcularResumenFactura(cuerpoDocumento, 1, '03'); // Pasar tipoDte
 
         const documentoDTE = {
             identificacion: construirIdentificacion('03', numeroControl, codigoGeneracion),
@@ -206,7 +212,7 @@ const probarNotaCredito = async (numeroTest = 1) => {
         const cuerpoDocumento = items.map((item, index) =>
             calcularLineaProducto(item, index + 1, '05')
         );
-        const resumen = calcularResumenFactura(cuerpoDocumento, 1);
+        const resumen = calcularResumenFactura(cuerpoDocumento, 1, '05'); // Pasar tipoDte
 
         // Documento relacionado (factura original que se está creditando)
         const documentoRelacionado = [{
@@ -339,11 +345,12 @@ const enviarDTE = async (documentoDTE, tipoDte, codigoGeneracion, numeroControl)
 
         // Enviar a Hacienda
         printInfo('ENVÍO', 'Enviando a ambiente de pruebas MH...');
+        const versionDte = obtenerVersionDTE(tipoDte);
         const resultadoMH = await servicioMH.enviarDTE(
             resultadoFirma.firma,
             config.emisor.ambiente,
             tipoDte,
-            1
+            versionDte  // Versión dinámica según tipo DTE
         );
 
         if (resultadoMH.exito) {

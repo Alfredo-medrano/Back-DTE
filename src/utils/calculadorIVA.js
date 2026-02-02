@@ -6,11 +6,22 @@
  * Cálculos fiscales según normativa salvadoreña (Anexo II)
  * IVA = 13%
  * 
- * IMPORTANTE:
- * - Para Factura Electrónica (FE), el precioUni YA INCLUYE IVA
- * - Para Crédito Fiscal (CCF), el precioUni es SIN IVA
- * - Decimales: 8 para precios/cantidades, 2 para resumen
+ * IMPORTANTE - DIFERENCIAS POR VERSIÓN:
+ * - FE (01) v1: precioUni INCLUYE IVA, tributos = null
+ * - CCF (03) v3: precioUni SIN IVA, tributos = ["20"]
+ * - NC (05) v3: Similar a CCF, requiere documentoRelacionado
+ * - ND (06) v3: Similar a CCF, requiere documentoRelacionado
+ * - FSE (14) v1: Sin IVA, usa sujetoExcluido, aplica retención
+ * - FEX (11) v1: Exportación sin IVA
+ * 
+ * Decimales: 8 para precios/cantidades, 2 para resumen
  */
+
+const {
+    obtenerConfigDTE,
+    generarTributosCuerpo,
+    generarTributosResumen,
+} = require('../config/tiposDTE');
 
 const TASA_IVA = 0.13; // 13% IVA El Salvador
 
@@ -45,7 +56,6 @@ const calcularIVALinea = (montoTotal, precioIncluyeIva = true) => {
 
     if (precioIncluyeIva) {
         // FACTURA ELECTRÓNICA (FE): El precio YA incluye IVA
-        // Debemos extraer el IVA del total
         precioConIva = redondear(montoTotal);
         ventaGravada = redondear(montoTotal / (1 + TASA_IVA));
         ivaItem = redondear(precioConIva - ventaGravada);
@@ -61,46 +71,59 @@ const calcularIVALinea = (montoTotal, precioIncluyeIva = true) => {
 
 /**
  * Calcula una línea de producto para el cuerpoDocumento
+ * SOPORTA TODOS LOS TIPOS DE DTE según versión:
+ * - v1 (01, 11, 14, 15): tributos = null
+ * - v3 (03, 05, 06): tributos = ["20"]
+ * 
  * @param {object} item - Item del producto
  * @param {number} numItem - Número de línea
- * @param {string} tipoDte - '01' = FE (precio con IVA), '03' = CCF (precio sin IVA)
+ * @param {string} tipoDte - Código del tipo de DTE
  * @returns {object} Línea formateada según Anexo II
  */
 const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const tipoItem = item.tipoItem || 1; // 1=Bienes, 2=Servicios, 3=Ambos, 4=Otros
 
+    // Obtener configuración del tipo de DTE
+    const configDte = obtenerConfigDTE(tipoDte);
+    const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
+    const usaTributos = configDte ? configDte.usaTributos : false;
+
     // Calcular con precisión
     const cantidad = parseFloat(item.cantidad);
-    const precioUnitario = parseFloat(item.precioUnitario);
-    const descuento = parseFloat(item.descuento || 0);
+    const precioUnitario = parseFloat(item.precioUnitario || item.precioUni);
+    const descuento = parseFloat(item.descuento || item.montoDescu || 0);
 
     // Monto bruto antes de descuento
     const montoBruto = cantidad * precioUnitario;
     // Monto neto después de descuento
     const montoNeto = montoBruto - descuento;
 
-    // LÓGICA DIFERENCIADA POR TIPO DE DOCUMENTO
-    const esFE = tipoDte === '01'; // Factura Electrónica (precio incluye IVA)
-
     let precioUni, ventaGravada, ivaItem;
 
-    if (esFE) {
+    // ========================================
+    // LÓGICA DIFERENCIADA POR TIPO DE DTE
+    // ========================================
+    if (precioIncluyeIva) {
         // === FACTURA (01): Precio YA INCLUYE IVA ===
-        // precioUni = precio completo que paga el consumidor
-        // ventaGravada = montoNeto (precio completo × cantidad - descuento)
-        // ivaItem = IVA extraído (solo informativo)
         precioUni = precioUnitario;
         ventaGravada = redondear(montoNeto, 2);
-        // Extraer IVA del precio (informativo): IVA = monto / 1.13 * 0.13
-        ivaItem = redondear(montoNeto / 1.13 * 0.13, 2);
+        // Extraer IVA del precio (informativo)
+        ivaItem = redondear(montoNeto / (1 + TASA_IVA) * TASA_IVA, 2);
+    } else if (tipoDte === '14') {
+        // === SUJETO EXCLUIDO (14): SIN IVA ===
+        precioUni = precioUnitario;
+        ventaGravada = redondear(montoNeto, 2);
+        ivaItem = 0.00;
+    } else if (tipoDte === '11') {
+        // === EXPORTACIÓN (11): SIN IVA ===
+        precioUni = precioUnitario;
+        ventaGravada = redondear(montoNeto, 2);
+        ivaItem = 0.00;
     } else {
-        // === CRÉDITO FISCAL (03): Precio es NETO (sin IVA) ===
-        // precioUni = precio neto
-        // ventaGravada = montoNeto
-        // ivaItem = IVA a sumar aparte (13%)
+        // === CCF (03), NC (05), ND (06): Precio NETO + IVA ===
         precioUni = precioUnitario;
         ventaGravada = redondear(montoNeto, 2);
-        ivaItem = redondear(montoNeto * 0.13, 2);
+        ivaItem = redondear(montoNeto * TASA_IVA, 2);
     }
 
     // CRÍTICO: Unidad de medida según tipo de item
@@ -108,12 +131,12 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     if (tipoItem === 2) {
         uniMedida = 99; // Servicios DEBEN usar código 99
     }
-    if (item.unidadMedida) {
-        uniMedida = item.unidadMedida; // Permitir override manual
+    if (item.unidadMedida || item.uniMedida) {
+        uniMedida = item.unidadMedida || item.uniMedida;
     }
 
-    // NORMATIVA MH v1: tributos debe ser NULL para FE
-    const tributos = null;
+    // TRIBUTOS: v1=null, v3=["20"]
+    const tributos = usaTributos ? generarTributosCuerpo(tipoDte) : null;
 
     return {
         numItem: numItem,
@@ -123,27 +146,37 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         codigo: item.codigo || null,
         codTributo: null,
         uniMedida: uniMedida,
-        descripcion: item.descripcion.toUpperCase(),
+        descripcion: (item.descripcion || '').toUpperCase(),
         precioUni: redondear(precioUni, 2),
         montoDescu: redondear(descuento, 2),
         ventaNoSuj: 0.00,
         ventaExenta: 0.00,
-        ventaGravada: ventaGravada,   // Para FE: precio completo. Para CCF: precio neto.
+        ventaGravada: ventaGravada,
         tributos: tributos,
         psv: 0.00,
         noGravado: 0.00,
-        ivaItem: ivaItem,             // Para FE: extraído. Para CCF: calculado.
+        ivaItem: ivaItem,
     };
 };
 
 /**
  * Calcula el resumen completo de una factura según Anexo II
- * @param {Array} lineas - Array de líneas del cuerpoDocumento (ya procesadas)
+ * SOPORTA TODOS LOS TIPOS DE DTE según versión:
+ * - v1 (01): tributos = null
+ * - v3 (03, 05, 06): tributos = [{codigo, descripcion, valor}]
+ * - FSE (14): incluye retención renta
+ * 
+ * @param {Array} lineas - Array de líneas del cuerpoDocumento
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
- * @param {string} tipoDte - '01'=FE (IVA incluido), '03'=CCF (IVA sumado)
+ * @param {string} tipoDte - Código del tipo de DTE
  * @returns {object} Resumen formateado según Anexo II
  */
 const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') => {
+    // Obtener configuración del tipo de DTE
+    const configDte = obtenerConfigDTE(tipoDte);
+    const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
+    const usaTributos = configDte ? configDte.usaTributos : false;
+
     let totalNoSuj = 0;
     let totalExenta = 0;
     let totalGravada = 0;
@@ -168,17 +201,31 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
     const subTotal = subTotalVentas;
 
-    // LÓGICA DIFERENCIADA:
-    // FE (01): ventaGravada YA incluye IVA -> totalPagar = subTotal (NO sumar IVA otra vez)
-    // CCF (03): ventaGravada es neto -> totalPagar = subTotal + IVA
-    const esFE = tipoDte === '01';
-    const montoTotalOperacion = esFE
-        ? subTotal                              // FE: IVA ya incluido en ventaGravada
-        : redondear(subTotal + totalIva);       // CCF: sumar IVA
+    // ========================================
+    // LÓGICA DE CÁLCULO POR TIPO DE DTE
+    // ========================================
+    let montoTotalOperacion;
+    let reteRenta = 0.00;
+
+    if (precioIncluyeIva) {
+        // FE (01): ventaGravada YA incluye IVA
+        montoTotalOperacion = subTotal;
+    } else if (tipoDte === '14') {
+        // FSE (14): Sin IVA, con retención renta 10%
+        reteRenta = redondear(totalGravada * 0.10);
+        montoTotalOperacion = redondear(subTotal - reteRenta);
+    } else if (tipoDte === '11') {
+        // FEX (11): Exportación sin IVA
+        montoTotalOperacion = subTotal;
+    } else {
+        // CCF (03), NC (05), ND (06): Sumar IVA
+        montoTotalOperacion = redondear(subTotal + totalIva);
+    }
+
     const totalPagar = redondear(montoTotalOperacion);
 
-    // NORMATIVA MH v1: Esquema para Factura Electrónica (01)
-    // Tributos debe ser null - el IVA va implícito en el precio
+    // TRIBUTOS: v1=null, v3=[{codigo, descripcion, valor}]
+    const tributosResumen = usaTributos ? generarTributosResumen(tipoDte, totalIva) : null;
 
     return {
         totalNoSuj: totalNoSuj,
@@ -190,10 +237,10 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
         descuGravada: totalDescuento,
         porcentajeDescuento: 0.00,
         totalDescu: totalDescuento,
-        tributos: null,                  // v1: null para FE
+        tributos: tributosResumen,        // null o [{codigo, descripcion, valor}]
         subTotal: subTotal,
-        ivaRete1: 0.00,                  // v1 Legacy: ivaRete1 (no ivaRete)
-        reteRenta: 0.00,                 // v1 Legacy: REQUERIDO
+        ivaRete1: 0.00,
+        reteRenta: reteRenta,             // Para FSE
         montoTotalOperacion: montoTotalOperacion,
         totalNoGravado: 0.00,
         totalPagar: totalPagar,
@@ -201,9 +248,8 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
         totalIva: totalIva,
         saldoFavor: 0.00,
         condicionOperacion: condicionOperacion,
-        pagos: null,                     // null para condición Contado
+        pagos: null,
         numPagoElectronico: null,
-        // v1 Legacy: SIN observaciones
     };
 };
 
@@ -287,7 +333,7 @@ function numeroALetras(numero) {
         texto = (miles === 1 ? 'MIL' : convertirGrupo(miles) + ' MIL');
         if (resto > 0) texto += ' ' + convertirGrupo(resto);
     } else {
-        texto = parteEntera.toString(); // Para números muy grandes
+        texto = parteEntera.toString();
     }
 
     const decimalesStr = parteDecimal.toString().padStart(2, '0');

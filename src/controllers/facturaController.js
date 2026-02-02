@@ -15,6 +15,10 @@
 
 const config = require('../config/env');
 const {
+    obtenerConfigDTE,
+    obtenerVersionDTE,
+} = require('../config/tiposDTE');
+const {
     generarCodigoGeneracion,
     generarNumeroControl,
     generarFechaActual,
@@ -138,14 +142,21 @@ const crearFactura = async (req, res) => {
         }
 
         // ========================================
-        // 4. CONSTRUIR DOCUMENTO DTE (Anexo II - FE v1 Legacy)
+        // 4. CONSTRUIR DOCUMENTO DTE (Anexo II)
         // ========================================
+        // Obtener configuración del tipo de DTE (versión dinámica)
+        const configDte = obtenerConfigDTE(tipoDte);
+        const versionDte = configDte ? configDte.version : 1;
+
+        console.log(`   📋 Tipo DTE: ${tipoDte} (${configDte?.nombreCorto || 'N/A'})`);
+        console.log(`   📋 Versión Schema: ${versionDte}`);
+
         const documentoDTE = {
             // --- IDENTIFICACIÓN ---
             identificacion: {
-                version: 1,                                    // v1 Legacy para Factura Electrónica
+                version: versionDte,                           // Versión dinámica según tipo DTE
                 ambiente: config.emisor.ambiente,              // "00"=Pruebas, "01"=Producción
-                tipoDte: tipoDte,                              // "01"=FE
+                tipoDte: tipoDte,
                 numeroControl: numeroControl,
                 codigoGeneracion: codigoGeneracion,            // UUID en mayúsculas
                 tipoModelo: 1,                                 // 1=Normal
@@ -262,7 +273,7 @@ const crearFactura = async (req, res) => {
             resultadoFirma.firma,
             config.emisor.ambiente,
             tipoDte,
-            1,  // versión 1 para FE
+            versionDte,  // Versión dinámica según tipo DTE
             codigoGeneracion  // UUID del documento
         );
 

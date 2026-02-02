@@ -1,0 +1,16 @@
+{
+  "exito": false,
+  "error": {
+    "timestamp": "2026-02-02T11:48:24.107-0600",
+    "status": 400,
+    "error": "Bad Request",
+    "path": "/fesv/recepciondte"
+  },
+  "errorCompleto": {
+    "timestamp": "2026-02-02T11:48:24.107-0600",
+    "status": 400,
+    "error": "Bad Request",
+    "path": "/fesv/recepciondte"
+  },
+  "mensaje": "Error de comunicación con Hacienda"
+}
