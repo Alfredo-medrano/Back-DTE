@@ -71,18 +71,39 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
 
     // Calcular con precisión
     const cantidad = parseFloat(item.cantidad);
-    const precioUni = parseFloat(item.precioUnitario);
-    const montoTotal = cantidad * precioUni;
+    const precioUnitario = parseFloat(item.precioUnitario);
     const descuento = parseFloat(item.descuento || 0);
-    const montoNeto = montoTotal - descuento;
 
-    // Para FE (tipoDte 01), el precio incluye IVA
-    const precioIncluyeIva = tipoDte === '01';
-    const { ventaGravada, ivaItem } = calcularIVALinea(montoNeto, precioIncluyeIva);
+    // Monto bruto antes de descuento
+    const montoBruto = cantidad * precioUnitario;
+    // Monto neto después de descuento
+    const montoNeto = montoBruto - descuento;
+
+    // LÓGICA DIFERENCIADA POR TIPO DE DOCUMENTO
+    const esFE = tipoDte === '01'; // Factura Electrónica (precio incluye IVA)
+
+    let precioUni, ventaGravada, ivaItem;
+
+    if (esFE) {
+        // === FACTURA (01): Precio YA INCLUYE IVA ===
+        // precioUni = precio completo que paga el consumidor
+        // ventaGravada = montoNeto (precio completo × cantidad - descuento)
+        // ivaItem = IVA extraído (solo informativo)
+        precioUni = precioUnitario;
+        ventaGravada = redondear(montoNeto, 2);
+        // Extraer IVA del precio (informativo): IVA = monto / 1.13 * 0.13
+        ivaItem = redondear(montoNeto / 1.13 * 0.13, 2);
+    } else {
+        // === CRÉDITO FISCAL (03): Precio es NETO (sin IVA) ===
+        // precioUni = precio neto
+        // ventaGravada = montoNeto
+        // ivaItem = IVA a sumar aparte (13%)
+        precioUni = precioUnitario;
+        ventaGravada = redondear(montoNeto, 2);
+        ivaItem = redondear(montoNeto * 0.13, 2);
+    }
 
     // CRÍTICO: Unidad de medida según tipo de item
-    // 59 = Unidad (para bienes)
-    // 99 = Servicio (para servicios)
     let uniMedida = 59; // Default para bienes
     if (tipoItem === 2) {
         uniMedida = 99; // Servicios DEBEN usar código 99
@@ -91,29 +112,27 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         uniMedida = item.unidadMedida; // Permitir override manual
     }
 
-    // NORMATIVA MH v1 Legacy: Para Factura Electrónica (tipoDte 01), 
-    // tributos en cuerpoDocumento debe ser array con código "20" (IVA)
-    const tributos = ['20'];
+    // NORMATIVA MH v1: tributos debe ser NULL para FE
+    const tributos = null;
 
     return {
         numItem: numItem,
         tipoItem: tipoItem,
         numeroDocumento: null,
-        // NORMATIVA MH: Cuerpo del documento usa HASTA 8 DECIMALES
         cantidad: redondear(cantidad, 8),
         codigo: item.codigo || null,
         codTributo: null,
         uniMedida: uniMedida,
         descripcion: item.descripcion.toUpperCase(),
-        precioUni: redondear(precioUni, 8),     // 8 decimales según normativa
-        montoDescu: redondear(descuento, 8),    // 8 decimales según normativa
+        precioUni: redondear(precioUni, 2),
+        montoDescu: redondear(descuento, 2),
         ventaNoSuj: 0.00,
         ventaExenta: 0.00,
-        ventaGravada: redondear(ventaGravada, 2), // 2 decimales para montos finales
-        tributos: tributos,                       // Array ["20"] para IVA
+        ventaGravada: ventaGravada,   // Para FE: precio completo. Para CCF: precio neto.
+        tributos: tributos,
         psv: 0.00,
         noGravado: 0.00,
-        ivaItem: redondear(ivaItem, 2),
+        ivaItem: ivaItem,             // Para FE: extraído. Para CCF: calculado.
     };
 };
 
@@ -121,9 +140,10 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
  * Calcula el resumen completo de una factura según Anexo II
  * @param {Array} lineas - Array de líneas del cuerpoDocumento (ya procesadas)
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
+ * @param {string} tipoDte - '01'=FE (IVA incluido), '03'=CCF (IVA sumado)
  * @returns {object} Resumen formateado según Anexo II
  */
-const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
+const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') => {
     let totalNoSuj = 0;
     let totalExenta = 0;
     let totalGravada = 0;
@@ -148,22 +168,17 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
     const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
     const subTotal = subTotalVentas;
 
-    // IMPORTANTE: Para Factura Electrónica (FE), el precio ya incluye IVA
-    // Por lo tanto: montoTotalOperacion = subTotal + IVA (que es el monto original del cliente)
-    // Esto equivale a: ventaGravada + IVA = precio original
-    const montoTotalOperacion = redondear(subTotal + totalIva);
+    // LÓGICA DIFERENCIADA:
+    // FE (01): ventaGravada YA incluye IVA -> totalPagar = subTotal (NO sumar IVA otra vez)
+    // CCF (03): ventaGravada es neto -> totalPagar = subTotal + IVA
+    const esFE = tipoDte === '01';
+    const montoTotalOperacion = esFE
+        ? subTotal                              // FE: IVA ya incluido en ventaGravada
+        : redondear(subTotal + totalIva);       // CCF: sumar IVA
     const totalPagar = redondear(montoTotalOperacion);
 
-    // NORMATIVA MH v1 Legacy - Esquema antiguo para Factura Electrónica (01)
-
-    // Tributos array para resumen (v1 Legacy)
-    const tributosResumen = totalGravada > 0 ? [
-        {
-            codigo: '20',
-            descripcion: 'Impuesto al Valor Agregado 13%',
-            valor: totalIva,
-        }
-    ] : null;
+    // NORMATIVA MH v1: Esquema para Factura Electrónica (01)
+    // Tributos debe ser null - el IVA va implícito en el precio
 
     return {
         totalNoSuj: totalNoSuj,
@@ -175,7 +190,7 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1) => {
         descuGravada: totalDescuento,
         porcentajeDescuento: 0.00,
         totalDescu: totalDescuento,
-        tributos: tributosResumen,       // v1 Legacy: array de tributos
+        tributos: null,                  // v1: null para FE
         subTotal: subTotal,
         ivaRete1: 0.00,                  // v1 Legacy: ivaRete1 (no ivaRete)
         reteRenta: 0.00,                 // v1 Legacy: REQUERIDO

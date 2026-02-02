@@ -92,17 +92,26 @@ const crearFactura = async (req, res) => {
         console.log('📄 Iniciando creación de factura electrónica...');
 
         // ========================================
+        // SOLUCIÓN CONFLICTO DE NITs
+        // ========================================
+        // PASO 1: Primero rellenar a 14 dígitos para garantizar formato consistente
+        const nitDocker = emisor.nit.padStart(14, '0');     // "070048272" -> "00000070048272"
+
+        // PASO 2: Tomar los últimos 9 caracteres para Hacienda (preserva el 0 inicial)
+        const nitHacienda = nitDocker.slice(-9);            // "00000070048272" -> "070048272"
+
+        console.log(`   🔑 NIT para Hacienda (JSON): ${nitHacienda}`);
+        console.log(`   📁 NIT para Docker (Archivo): ${nitDocker}`);
+
+        // ========================================
         // 1. GENERAR IDENTIFICADORES ÚNICOS
         // ========================================
         const codigoGeneracion = generarCodigoGeneracion();
 
-        // v1: numeroControl formato DTE-XX-XXXXXXXX-XXXXXXXXXXXXXXX
-        // Si tiene códigos MH usa M001P001, sino usa 00000001
-        const codEstableMH = emisor.codEstableMH || null;
-        const codPuntoVentaMH = emisor.codPuntoVentaMH || null;
-        const codigoEstablecimiento = (codEstableMH && codPuntoVentaMH)
-            ? codEstableMH + codPuntoVentaMH
-            : '00000001';
+        // v1: numeroControl formato DTE-XX-M001P001-XXXXXXXXXXXXXXX (31 caracteres total)
+        const codEstableMH = emisor.codEstableMH || 'M001';
+        const codPuntoVentaMH = emisor.codPuntoVentaMH || 'P001';
+        const codigoEstablecimiento = codEstableMH + codPuntoVentaMH; // Siempre 8 caracteres: M001P001
         const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
         const fechaEmision = generarFechaActual();
         const horaEmision = generarHoraEmision();
@@ -120,7 +129,7 @@ const crearFactura = async (req, res) => {
         // ========================================
         // 3. CALCULAR RESUMEN
         // ========================================
-        const resumen = calcularResumenFactura(cuerpoDocumento, condicionOperacion);
+        const resumen = calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte);
 
         // Validar que los cálculos cuadren
         const validacion = validarCuadre(resumen);
@@ -153,7 +162,7 @@ const crearFactura = async (req, res) => {
 
             // --- EMISOR ---
             emisor: {
-                nit: emisor.nit,
+                nit: nitHacienda,   // 9 dígitos para Hacienda (sin ceros a la izquierda)
                 nrc: emisor.nrc,
                 nombre: (emisor.nombre || '').toUpperCase(),
                 codActividad: emisor.codActividad,
@@ -162,20 +171,19 @@ const crearFactura = async (req, res) => {
                     ? emisor.nombreComercial.toUpperCase()
                     : null,
                 tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
-                // Dirección CON distrito (requerido en v1)
+                // v1: SIN distrito
                 direccion: {
                     departamento: emisor.direccion?.departamento || '06',
                     municipio: emisor.direccion?.municipio || '14',
-                    distrito: emisor.direccion?.distrito || '01',   // REQUERIDO
                     complemento: (emisor.direccion?.complemento || '').toUpperCase(),
                 },
                 telefono: emisor.telefono,
                 correo: emisor.correo,
-                // Códigos MH (pueden ser null si no tienes asignados)
-                codEstableMH: emisor.codEstableMH || null,
-                codEstable: emisor.codEstable || null,
-                codPuntoVentaMH: emisor.codPuntoVentaMH || null,
-                codPuntoVenta: emisor.codPuntoVenta || null,
+                // v1: Códigos MH OBLIGATORIOS
+                codEstableMH: emisor.codEstableMH || 'M001',
+                codEstable: emisor.codEstable || 'M001',
+                codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
+                codPuntoVenta: emisor.codPuntoVenta || 'P001',
             },
 
             // --- RECEPTOR ---
@@ -188,11 +196,10 @@ const crearFactura = async (req, res) => {
                 descActividad: receptor.descActividad
                     ? receptor.descActividad.toUpperCase()
                     : null,
-                // Dirección CON distrito (requerido en v1)
+                // v1: SIN distrito
                 direccion: {
                     departamento: receptor.direccion?.departamento || '06',
                     municipio: receptor.direccion?.municipio || '14',
-                    distrito: receptor.direccion?.distrito || '01',    // REQUERIDO
                     complemento: (receptor.direccion?.complemento || '').toUpperCase(),
                 },
                 telefono: receptor.telefono || null,
@@ -228,9 +235,11 @@ const crearFactura = async (req, res) => {
         // 5. FIRMAR DOCUMENTO CON DOCKER
         // ========================================
         console.log('🔏 Enviando a firmar...');
+        // NOTA: nitDocker (14 dígitos) para encontrar el archivo .crt
+        //       documentoDTE ya tiene nitHacienda (9 dígitos) dentro
         const resultadoFirma = await servicioDocker.firmarDocumento(
             documentoDTE,
-            emisor.nit,
+            nitDocker,              // 14 dígitos para encontrar el certificado
             config.mh.clavePrivada
         );
 
