@@ -3,20 +3,37 @@ node_modules/
 
 # Variables de entorno (SECRETOS)
 .env
+*.env
+svfe-api.env
 
 # Certificados digitales
-temp/*.crt
-temp/*.p12
-temp/*.pfx
+temp/
+*.crt
+*.p12
+*.pfx
+*.pem
 
-# Logs
+# Logs y resultados de pruebas
+logs/
 *.log
 npm-debug.log*
+
+# Archivos de prueba/desarrollo
+TROUBLESHOOTING*.js
+test-*.js
 
 # Sistema operativo
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Build y cache
+dist/
+build/
+.cache/

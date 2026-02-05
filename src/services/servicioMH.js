@@ -134,9 +134,10 @@ const enviarDTE = async (documentoFirmado, ambiente = '00', tipoDte = '01', vers
         // El payload principal solo necesita estos campos
         const payload = {
             ambiente: ambiente,
-            idEnvio: Date.now().toString(),
+            idEnvio: Number(Date.now()),      // ¡CRÍTICO! Debe ser entero, no string
             version: parseInt(version),
             tipoDte: tipoDte,
+            codigoGeneracion: codigoGeneracion,  // ¡CRÍTICO! UUID del documento
             documento: documentoFirmado,
         };
 
