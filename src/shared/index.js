@@ -10,10 +10,12 @@ const errors = require('./errors');
 const middleware = require('./middleware');
 const utils = require('./utils');
 const integrations = require('./integrations');
+const db = require('./db');
 
 module.exports = {
     errors,
     middleware,
     utils,
     integrations,
+    db,
 };

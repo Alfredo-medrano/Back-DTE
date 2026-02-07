@@ -16,6 +16,7 @@ const {
     ValidationError,
     ServiceUnavailableError,
 } = require('./http.errors');
+const { TooManyRequestsError } = require('./too-many-requests');
 
 module.exports = {
     // Base
@@ -29,4 +30,5 @@ module.exports = {
     ConflictError,
     ValidationError,
     ServiceUnavailableError,
+    TooManyRequestsError,
 };

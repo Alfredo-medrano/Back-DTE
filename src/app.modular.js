@@ -3,10 +3,10 @@
  * MIDDLEWARE FACTURACIÓN ELECTRÓNICA
  * El Salvador - API REST
  * ========================================
- * Arquitectura: MVC Modular
- * Versión: 2.0.0
+ * Arquitectura: MVC Modular SaaS
+ * Versión: 3.0.0
  * 
- * Inicia con: npm run dev
+ * Inicia con: node src/app.modular.js
  */
 
 const express = require('express');
@@ -14,11 +14,13 @@ const cors = require('cors');
 const config = require('./config/env');
 
 // Shared Infrastructure
-const { middleware } = require('./shared');
-const { requestLogger, errorHandler, notFoundHandler } = middleware;
+const { middleware, db } = require('./shared');
+const { requestLogger, errorHandler, notFoundHandler, rateLimiterCustom } = middleware;
+const { prisma } = db;
 
 // Módulos
-const { dteRoutes } = require('./modules/dte');
+const { dteRoutes, services: dteServices } = require('./modules/dte');
+const { retryQueue } = dteServices;
 
 // Crear aplicación Express
 const app = express();
@@ -39,6 +41,9 @@ app.use(express.urlencoded({ extended: true }));
 // Logger de peticiones
 app.use(requestLogger);
 
+// Rate limit global (rutas públicas)
+app.use(rateLimiterCustom(200, 60000)); // 200 req/min global
+
 // ========================================
 // RUTAS
 // ========================================
@@ -46,35 +51,44 @@ app.use(requestLogger);
 // Ruta raíz - información del sistema
 app.get('/', (req, res) => {
     res.json({
-        nombre: 'Middleware Facturación Electrónica',
+        nombre: 'Middleware Facturación Electrónica SaaS',
         pais: 'El Salvador',
-        version: '2.0.0',
-        arquitectura: 'MVC Modular',
+        version: '3.0.0',
+        arquitectura: 'MVC Modular Multi-Tenant',
         normativa: 'Anexo II - DTE',
-        descripcion: 'API REST para generación, firma y transmisión de DTEs',
         endpoints: {
-            estado: 'GET /api/status',
-            facturar: 'POST /api/facturar',
-            transmitir: 'POST /api/transmitir',
-            consultar: 'GET /api/factura/:codigoGeneracion',
-            ejemplo: 'GET /api/ejemplo',
-            testFirma: 'POST /api/test-firma',
-            testAuth: 'GET /api/test-auth',
+            publicos: {
+                estado: 'GET /api/status',
+                ejemplo: 'GET /api/ejemplo',
+            },
+            protegidos: {
+                facturar: 'POST /api/v2/facturar',
+                listar: 'GET /api/v2/facturas',
+                consultar: 'GET /api/v2/factura/:codigo',
+                estadisticas: 'GET /api/v2/estadisticas',
+            },
+            pruebas: {
+                testFirma: 'POST /api/v2/test-firma',
+                testAuth: 'GET /api/v2/test-auth',
+            },
         },
-        modulos: ['dte', 'iam (futuro)', 'billing (futuro)'],
-        documentacion: 'Ver README.md',
+        autenticacion: 'Header Authorization: Bearer sk_xxx',
+        modulos: ['dte', 'iam', 'billing (próximo)'],
     });
 });
 
-// Módulo DTE
-app.use('/api', dteRoutes);
+// Health check
+app.get('/health', async (req, res) => {
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        res.json({ status: 'OK', database: 'connected', timestamp: new Date().toISOString() });
+    } catch (error) {
+        res.status(503).json({ status: 'ERROR', database: 'disconnected', error: error.message });
+    }
+});
 
-// ========================================
-// BACKWARD COMPATIBILITY
-// Alias para mantener compatibilidad con versión 1.x
-// ========================================
-const { dteController } = require('./modules/dte/controllers');
-app.get('/api/status', dteController.probarAutenticacion); // Alias
+// Módulo DTE (rutas públicas + v2 protegidas)
+app.use('/api', dteRoutes);
 
 // ========================================
 // MANEJO DE ERRORES
@@ -92,12 +106,12 @@ app.use(errorHandler);
 
 const PORT = config.port;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log('');
     console.log('========================================');
     console.log('  MIDDLEWARE FACTURACIÓN ELECTRÓNICA');
-    console.log('  El Salvador - DTE');
-    console.log('  🏗️  Arquitectura: MVC Modular v2.0');
+    console.log('  El Salvador - DTE SaaS');
+    console.log('  🏗️  Arquitectura: MVC Modular v3.0');
     console.log('========================================');
     console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
     console.log(`📍 URL: http://localhost:${PORT}`);
@@ -106,16 +120,32 @@ app.listen(PORT, () => {
     console.log(`🌍 Ambiente: ${config.emisor.ambiente === '00' ? 'PRUEBAS' : 'PRODUCCIÓN'}`);
     console.log('========================================');
     console.log('');
-    console.log('Endpoints disponibles:');
-    console.log('  GET  /           - Info del sistema');
-    console.log('  GET  /api/status - Estado de componentes');
-    console.log('  POST /api/facturar - Crear factura');
-    console.log('  POST /api/transmitir - Transmitir DTE directo');
-    console.log('  GET  /api/factura/:codigo - Consultar');
-    console.log('  GET  /api/ejemplo - Documento ejemplo');
-    console.log('  POST /api/test-firma - Probar firma');
-    console.log('  GET  /api/test-auth - Probar auth');
+    console.log('Endpoints v2 (requieren API Key):');
+    console.log('  POST /api/v2/facturar      - Crear factura');
+    console.log('  GET  /api/v2/facturas      - Listar DTEs');
+    console.log('  GET  /api/v2/factura/:id   - Consultar');
+    console.log('  GET  /api/v2/estadisticas  - Dashboard');
     console.log('');
+    console.log('Endpoints públicos:');
+    console.log('  GET  /api/status           - Estado');
+    console.log('  GET  /api/ejemplo          - Ejemplo DTE');
+    console.log('  GET  /health               - Health check');
+    console.log('');
+
+    // Iniciar procesador de reintentos (cada 5 minutos)
+    retryQueue.iniciarProcesadorPeriodico(5);
+    console.log('⏰ Procesador de reintentos iniciado (cada 5 min)');
+    console.log('');
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    console.log('\n🛑 Cerrando servidor...');
+    await prisma.$disconnect();
+    server.close(() => {
+        console.log('✅ Servidor cerrado correctamente');
+        process.exit(0);
+    });
 });
 
 module.exports = app;

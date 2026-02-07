@@ -8,9 +8,10 @@
  * 2. Construir documento DTE
  * 3. Firmar con Docker
  * 4. Enviar a Hacienda
+ * 
+ * VERSIÓN MULTI-TENANT: Recibe contexto del tenant
  */
 
-const config = require('../../../config/env');
 const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 const { obtenerConfigDTE } = require('../constants');
 const { calcularLineaProducto, calcularResumenFactura, validarCuadre } = require('./dte-calculator.service');
@@ -18,32 +19,34 @@ const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
 
 /**
- * Procesa una factura electrónica completa
- * @param {object} datos - Datos de la factura
+ * Procesa una factura electrónica completa (MULTI-TENANT)
+ * @param {object} params - Parámetros de procesamiento
+ * @param {object} params.datos - Datos de la factura (receptor, items, etc.)
+ * @param {object} params.emisor - Datos del emisor desde BD (con credenciales desencriptadas)
+ * @param {string} params.tenantId - ID del tenant
  * @returns {Promise<object>} Resultado del procesamiento
  */
-const procesarFactura = async (datos) => {
+const procesarFactura = async ({ datos, emisor, tenantId }) => {
     const {
-        emisor,
         receptor,
         items,
         tipoDte = '01',
-        correlativo = 1,
+        correlativo,
         condicionOperacion = 1,
     } = datos;
 
     // Generar identificadores
     const codigoGeneracion = generarCodigoGeneracion();
-    const codEstableMH = emisor.codEstableMH || 'M001';
-    const codPuntoVentaMH = emisor.codPuntoVentaMH || 'P001';
-    const codigoEstablecimiento = codEstableMH + codPuntoVentaMH;
-    const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
+    const codigoEstablecimiento = (emisor.codEstableMH || 'M001') + (emisor.codPuntoVentaMH || 'P001');
+    const correlativoFinal = correlativo || 1; // En producción se obtiene del emisor
+    const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativoFinal);
     const fechaEmision = generarFechaActual();
     const horaEmision = generarHoraEmision();
 
-    // Preparar NITs
-    const nitDocker = emisor.nit.padStart(14, '0');
-    const nitHacienda = nitDocker.slice(-9);
+    // Preparar NIT para Hacienda (últimos 9 dígitos)
+    const nitHacienda = emisor.nit.slice(-9);
+
+    console.log(`📄 [Tenant: ${tenantId}] Procesando ${tipoDte} para ${receptor.nombre || 'RECEPTOR'}`);
 
     // Procesar cuerpo del documento
     const cuerpoDocumento = items.map((item, index) => {
@@ -65,14 +68,14 @@ const procesarFactura = async (datos) => {
     const documentoDTE = construirDocumentoDTE({
         identificacion: {
             version: versionDte,
-            ambiente: config.emisor.ambiente,
+            ambiente: emisor.ambiente,
             tipoDte,
             numeroControl,
             codigoGeneracion,
             fechaEmision,
             horaEmision,
         },
-        emisor: { ...emisor, nit: nitHacienda },
+        emisor: formatearEmisor(emisor, nitHacienda),
         receptor,
         cuerpoDocumento,
         resumen,
@@ -82,11 +85,11 @@ const procesarFactura = async (datos) => {
 
     // Firmar documento
     console.log('🔏 Enviando a firmar...');
-    const resultadoFirma = await signerService.firmarDocumento(
-        documentoDTE,
-        nitDocker,
-        config.mh.clavePrivada
-    );
+    const resultadoFirma = await signerService.firmarDocumento({
+        documento: documentoDTE,
+        nit: emisor.nit,
+        clavePrivada: emisor.mhClavePrivada,
+    });
 
     if (!resultadoFirma.exito) {
         return {
@@ -99,13 +102,17 @@ const procesarFactura = async (datos) => {
 
     // Enviar a Hacienda
     console.log('📤 Transmitiendo a Hacienda...');
-    const resultadoMH = await mhService.enviarDTE(
-        resultadoFirma.firma,
-        config.emisor.ambiente,
+    const resultadoMH = await mhService.enviarDTE({
+        documentoFirmado: resultadoFirma.firma,
+        ambiente: emisor.ambiente,
         tipoDte,
-        versionDte,
-        codigoGeneracion
-    );
+        version: versionDte,
+        codigoGeneracion,
+        credenciales: {
+            nit: emisor.nit,
+            claveApi: emisor.mhClaveApi,
+        },
+    });
 
     return {
         exito: resultadoMH.exito,
@@ -120,6 +127,34 @@ const procesarFactura = async (datos) => {
         observaciones: resultadoMH.observaciones,
         documento: documentoDTE,
         documentoFirmado: resultadoFirma.firma,
+        tenantId,
+        emisorId: emisor.id,
+    };
+};
+
+/**
+ * Formatea los datos del emisor para el documento DTE
+ */
+const formatearEmisor = (emisor, nitHacienda) => {
+    return {
+        nit: nitHacienda,
+        nrc: emisor.nrc,
+        nombre: (emisor.nombre || '').toUpperCase(),
+        codActividad: emisor.codActividad,
+        descActividad: (emisor.descActividad || '').toUpperCase(),
+        nombreComercial: emisor.nombreComercial?.toUpperCase() || null,
+        tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
+        direccion: {
+            departamento: emisor.departamento || '06',
+            municipio: emisor.municipio || '14',
+            complemento: (emisor.complemento || '').toUpperCase(),
+        },
+        telefono: emisor.telefono,
+        correo: emisor.correo,
+        codEstableMH: emisor.codEstableMH || 'M001',
+        codEstable: emisor.codEstableMH || 'M001',
+        codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
+        codPuntoVenta: emisor.codPuntoVentaMH || 'P001',
     };
 };
 
@@ -143,26 +178,7 @@ const construirDocumentoDTE = ({ identificacion, emisor, receptor, cuerpoDocumen
             tipoMoneda: 'USD',
         },
         documentoRelacionado: null,
-        emisor: {
-            nit: emisor.nit,
-            nrc: emisor.nrc,
-            nombre: (emisor.nombre || '').toUpperCase(),
-            codActividad: emisor.codActividad,
-            descActividad: (emisor.descActividad || '').toUpperCase(),
-            nombreComercial: emisor.nombreComercial?.toUpperCase() || null,
-            tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
-            direccion: {
-                departamento: emisor.direccion?.departamento || '06',
-                municipio: emisor.direccion?.municipio || '14',
-                complemento: (emisor.direccion?.complemento || '').toUpperCase(),
-            },
-            telefono: emisor.telefono,
-            correo: emisor.correo,
-            codEstableMH: emisor.codEstableMH || 'M001',
-            codEstable: emisor.codEstable || 'M001',
-            codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
-            codPuntoVenta: emisor.codPuntoVenta || 'P001',
-        },
+        emisor,
         receptor: {
             tipoDocumento: receptor.tipoDocumento || '36',
             numDocumento: receptor.numDocumento,
@@ -188,30 +204,38 @@ const construirDocumentoDTE = ({ identificacion, emisor, receptor, cuerpoDocumen
 };
 
 /**
- * Transmite un documento DTE ya construido
+ * Transmite un documento DTE ya construido (MULTI-TENANT)
+ * @param {object} params - Parámetros de transmisión
+ * @param {object} params.documentoDTE - Documento DTE completo
+ * @param {object} params.emisor - Emisor con credenciales desencriptadas
  */
-const transmitirDirecto = async (documentoDTE) => {
+const transmitirDirecto = async ({ documentoDTE, emisor }) => {
     const tipoDte = documentoDTE.identificacion.tipoDte || '01';
     const codigoGeneracion = documentoDTE.identificacion.codigoGeneracion;
     const version = documentoDTE.identificacion.version || 1;
+    const ambiente = documentoDTE.identificacion.ambiente || emisor.ambiente;
 
-    const resultadoFirma = await signerService.firmarDocumento(
-        documentoDTE,
-        documentoDTE.emisor.nit,
-        config.mh.clavePrivada
-    );
+    const resultadoFirma = await signerService.firmarDocumento({
+        documento: documentoDTE,
+        nit: emisor.nit,
+        clavePrivada: emisor.mhClavePrivada,
+    });
 
     if (!resultadoFirma.exito) {
         return { exito: false, error: resultadoFirma.error };
     }
 
-    const resultadoMH = await mhService.enviarDTE(
-        resultadoFirma.firma,
-        documentoDTE.identificacion.ambiente || config.emisor.ambiente,
+    const resultadoMH = await mhService.enviarDTE({
+        documentoFirmado: resultadoFirma.firma,
+        ambiente,
         tipoDte,
         version,
-        codigoGeneracion
-    );
+        codigoGeneracion,
+        credenciales: {
+            nit: emisor.nit,
+            claveApi: emisor.mhClaveApi,
+        },
+    });
 
     return { ...resultadoMH, documentoFirmado: resultadoFirma.firma };
 };
@@ -220,4 +244,5 @@ module.exports = {
     procesarFactura,
     construirDocumentoDTE,
     transmitirDirecto,
+    formatearEmisor,
 };

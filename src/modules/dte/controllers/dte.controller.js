@@ -1,50 +1,95 @@
 /**
  * ========================================
- * CONTROLADOR DTE
+ * CONTROLADOR DTE (v2 - Multi-Tenant)
  * Módulo: DTE
  * ========================================
  * Maneja las peticiones HTTP para operaciones DTE
- * Responsabilidad: req/res (Vista en MVC para APIs)
+ * USA: req.tenant y req.emisor del middleware tenantContext
  */
 
-const { dteOrchestrator } = require('../services');
-const { signer, mhSender } = require('../services');
+const { dteOrchestrator, signer, mhSender } = require('../services');
+const { dteRepository } = require('../repositories');
 const { BadRequestError } = require('../../../shared/errors');
-const config = require('../../../config/env');
+const { tenantService } = require('../../iam');
 const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
 
 /**
- * Crear una nueva factura electrónica (flujo completo)
- * POST /api/dte/facturar
+ * Crear una nueva factura electrónica (flujo completo MULTI-TENANT)
+ * POST /api/v2/facturar
+ * Requiere: tenantContext middleware
  */
 const crearFactura = async (req, res, next) => {
     try {
-        const { emisor, receptor, items, tipoDte, correlativo, condicionOperacion } = req.body;
+        const { receptor, items, tipoDte, condicionOperacion } = req.body;
+        const { tenant, emisor } = req;
 
-        // Validación
-        if (!emisor || !receptor || !items || !Array.isArray(items) || items.length === 0) {
-            throw new BadRequestError('Datos incompletos', 'DATOS_INCOMPLETOS');
+        // Validación de entrada
+        if (!receptor || !items || !Array.isArray(items) || items.length === 0) {
+            throw new BadRequestError('Datos incompletos: receptor e items son requeridos', 'DATOS_INCOMPLETOS');
         }
 
-        console.log('📄 Iniciando creación de factura electrónica...');
+        console.log(`📄 [${tenant.nombre}] Creando factura ${tipoDte || '01'}...`);
 
+        // Obtener credenciales desencriptadas del emisor
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        // Obtener siguiente correlativo
+        const correlativo = await tenantService.obtenerSiguienteCorrelativo(emisor.id, tipoDte || '01');
+
+        // Procesar factura con contexto completo
         const resultado = await dteOrchestrator.procesarFactura({
-            emisor,
-            receptor,
-            items,
-            tipoDte,
-            correlativo,
-            condicionOperacion,
+            datos: {
+                receptor,
+                items,
+                tipoDte: tipoDte || '01',
+                correlativo,
+                condicionOperacion: condicionOperacion || 1,
+            },
+            emisor: emisorConCredenciales,
+            tenantId: tenant.id,
         });
+
+        // Persistir en BD (patrón Outbox)
+        if (resultado.exito) {
+            await dteRepository.crear({
+                tenantId: tenant.id,
+                emisorId: emisor.id,
+                codigoGeneracion: resultado.datos.codigoGeneracion,
+                numeroControl: resultado.datos.numeroControl,
+                tipoDte: tipoDte || '01',
+                version: resultado.documento.identificacion.version,
+                ambiente: emisorConCredenciales.ambiente,
+                fechaEmision: resultado.documento.identificacion.fecEmi,
+                horaEmision: resultado.documento.identificacion.horEmi,
+                receptor: {
+                    tipoDocumento: receptor.tipoDocumento || '36',
+                    numDocumento: receptor.numDocumento,
+                    nombre: receptor.nombre,
+                    correo: receptor.correo,
+                },
+                totales: {
+                    totalGravada: resultado.documento.resumen.totalGravada,
+                    totalIva: resultado.documento.resumen.totalIva || 0,
+                    totalPagar: resultado.documento.resumen.totalPagar,
+                },
+                jsonOriginal: resultado.documento,
+            }).then(dte => {
+                // Actualizar a PROCESADO
+                return dteRepository.actualizarEstado(dte.id, {
+                    status: 'PROCESADO',
+                    selloRecibido: resultado.datos.selloRecibido,
+                    fechaProcesamiento: resultado.datos.fechaProcesamiento,
+                    jsonFirmado: resultado.documentoFirmado,
+                });
+            });
+        }
 
         if (resultado.exito) {
             res.json({
                 exito: true,
-                mensaje: 'Factura procesada exitosamente por el Ministerio de Hacienda',
+                mensaje: 'Factura procesada exitosamente',
                 datos: resultado.datos,
-                documento: resultado.documento,
-                documentoFirmado: resultado.documentoFirmado,
             });
         } else {
             res.status(400).json({
@@ -52,7 +97,6 @@ const crearFactura = async (req, res, next) => {
                 mensaje: 'Factura rechazada por Hacienda',
                 error: resultado.error,
                 observaciones: resultado.observaciones,
-                documento: resultado.documento,
             });
         }
     } catch (error) {
@@ -61,64 +105,28 @@ const crearFactura = async (req, res, next) => {
 };
 
 /**
- * Transmitir documento DTE directo (JSON Anexo II ya armado)
- * POST /api/dte/transmitir
+ * Listar DTEs del tenant
+ * GET /api/v2/facturas
  */
-const transmitirDirecto = async (req, res, next) => {
+const listarFacturas = async (req, res, next) => {
     try {
-        const documentoDTE = req.body;
+        const { tenant, emisor } = req;
+        const { tipoDte, status, fechaDesde, fechaHasta, page, limit } = req.query;
 
-        if (!documentoDTE.identificacion || !documentoDTE.emisor || !documentoDTE.receptor || !documentoDTE.cuerpoDocumento) {
-            throw new BadRequestError('JSON incompleto. Se requiere estructura completa del Anexo II');
-        }
-
-        console.log('📄 Transmitiendo documento DTE directo...');
-
-        const resultado = await dteOrchestrator.transmitirDirecto(documentoDTE);
-
-        if (resultado.exito) {
-            res.json({
-                exito: true,
-                mensaje: 'Documento procesado exitosamente',
-                datos: {
-                    codigoGeneracion: documentoDTE.identificacion.codigoGeneracion,
-                    numeroControl: documentoDTE.identificacion.numeroControl,
-                    selloRecibido: resultado.selloRecibido,
-                    fechaProcesamiento: resultado.fechaProcesamiento,
-                    estado: resultado.estado,
-                },
-                documentoFirmado: resultado.documentoFirmado,
-            });
-        } else {
-            res.status(400).json({
-                exito: false,
-                mensaje: 'Documento rechazado por Hacienda',
-                error: resultado.error,
-                observaciones: resultado.observaciones,
-            });
-        }
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Consultar estado de una factura
- * GET /api/dte/factura/:codigoGeneracion
- */
-const consultarFactura = async (req, res, next) => {
-    try {
-        const { codigoGeneracion } = req.params;
-
-        if (!codigoGeneracion) {
-            throw new BadRequestError('Se requiere el código de generación');
-        }
-
-        const resultado = await mhSender.consultarEstado(codigoGeneracion);
+        const resultado = await dteRepository.listar({
+            tenantId: tenant.id,
+            emisorId: req.query.emisorId || emisor.id,
+            tipoDte,
+            status,
+            fechaDesde,
+            fechaHasta,
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 20,
+        });
 
         res.json({
-            exito: resultado.exito,
-            datos: resultado.data,
+            exito: true,
+            ...resultado,
         });
     } catch (error) {
         next(error);
@@ -126,8 +134,71 @@ const consultarFactura = async (req, res, next) => {
 };
 
 /**
- * Generar documento de ejemplo
- * GET /api/dte/ejemplo
+ * Consultar estado de una factura
+ * GET /api/v2/factura/:codigoGeneracion
+ */
+const consultarFactura = async (req, res, next) => {
+    try {
+        const { codigoGeneracion } = req.params;
+        const { emisor } = req;
+
+        if (!codigoGeneracion) {
+            throw new BadRequestError('Se requiere el código de generación');
+        }
+
+        // Buscar en BD local primero
+        const dteLocal = await dteRepository.buscarPorCodigo(codigoGeneracion);
+
+        // Obtener credenciales del emisor
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        // Consultar en Hacienda
+        const resultadoMH = await mhSender.consultarEstado({
+            codigoGeneracion,
+            credenciales: {
+                nit: emisorConCredenciales.nit,
+                claveApi: emisorConCredenciales.mhClaveApi,
+            },
+        });
+
+        res.json({
+            exito: true,
+            local: dteLocal ? {
+                status: dteLocal.status,
+                selloRecibido: dteLocal.selloRecibido,
+                fechaEmision: dteLocal.fechaEmision,
+            } : null,
+            hacienda: resultadoMH.data,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Estadísticas del tenant
+ * GET /api/v2/estadisticas
+ */
+const estadisticas = async (req, res, next) => {
+    try {
+        const { tenant } = req;
+        const { periodo } = req.query;
+
+        const stats = await dteRepository.estadisticas(tenant.id, periodo || 'mes');
+
+        res.json({
+            exito: true,
+            periodo: periodo || 'mes',
+            datos: stats,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Generar documento de ejemplo (no requiere auth)
+ * GET /api/ejemplo
  */
 const generarEjemplo = async (req, res, next) => {
     try {
@@ -137,7 +208,7 @@ const generarEjemplo = async (req, res, next) => {
         const horaEmision = generarHoraEmision();
 
         const itemEjemplo = {
-            descripcion: 'ZAPATO DEPORTIVO',
+            descripcion: 'PRODUCTO EJEMPLO',
             cantidad: 1.00,
             precioUnitario: 20.00,
             codigo: 'PROD001',
@@ -147,58 +218,24 @@ const generarEjemplo = async (req, res, next) => {
         const cuerpoDocumento = [calcularLineaProducto(itemEjemplo, 1, '01')];
         const resumen = calcularResumenFactura(cuerpoDocumento, 1, '01');
 
-        const documentoEjemplo = {
-            identificacion: {
-                version: 1,
-                ambiente: config.emisor.ambiente,
-                tipoDte: '01',
-                numeroControl,
-                codigoGeneracion,
-                tipoModelo: 1,
-                tipoOperacion: 1,
-                tipoContingencia: null,
-                motivoContin: null,
-                fecEmi: fechaEmision,
-                horEmi: horaEmision,
-                tipoMoneda: 'USD',
-            },
-            documentoRelacionado: null,
-            emisor: {
-                nit: '14042610051018',
-                nrc: '123456',
-                nombre: 'RAZON SOCIAL EMISOR',
-                codActividad: '12345',
-                descActividad: 'VENTA DE...',
-                nombreComercial: 'NOMBRE COMERCIAL',
-                tipoEstablecimiento: '01',
-                direccion: { departamento: '14', municipio: '04', complemento: 'DIRECCION COMPLETA' },
-                telefono: '22222222',
-                correo: 'emisor@correo.com',
-            },
-            receptor: {
-                tipoDocumento: '36',
-                numDocumento: '06141802020024',
-                nrc: '654321',
-                nombre: 'CLIENTE SA DE CV',
-                codActividad: '12345',
-                descActividad: 'ACTIVIDAD...',
-                direccion: { departamento: '06', municipio: '14', complemento: 'DIRECCION CLIENTE' },
-                telefono: '77777777',
-                correo: 'cliente@correo.com',
-            },
-            otrosDocumentos: null,
-            ventaTercero: null,
-            cuerpoDocumento,
-            resumen,
-            extension: null,
-            apendice: null,
-        };
-
         res.json({
             exito: true,
-            mensaje: 'Documento de ejemplo generado según Anexo II',
-            nota: 'Este documento NO ha sido firmado ni enviado a Hacienda',
-            documento: documentoEjemplo,
+            mensaje: 'Documento de ejemplo según Anexo II',
+            nota: 'Este documento NO ha sido firmado ni enviado',
+            documento: {
+                identificacion: {
+                    version: 1,
+                    ambiente: '00',
+                    tipoDte: '01',
+                    numeroControl,
+                    codigoGeneracion,
+                    fecEmi: fechaEmision,
+                    horEmi: horaEmision,
+                    tipoMoneda: 'USD',
+                },
+                cuerpoDocumento,
+                resumen,
+            },
         });
     } catch (error) {
         next(error);
@@ -206,27 +243,30 @@ const generarEjemplo = async (req, res, next) => {
 };
 
 /**
- * Probar firma (sin enviar a Hacienda)
- * POST /api/dte/test-firma
+ * Probar firma (con credenciales del tenant)
+ * POST /api/v2/test-firma
  */
 const probarFirma = async (req, res, next) => {
     try {
         const documento = req.body;
+        const { emisor } = req;
 
         if (!documento || Object.keys(documento).length === 0) {
-            throw new BadRequestError('Se requiere un documento JSON para firmar');
+            throw new BadRequestError('Se requiere un documento JSON');
         }
 
-        const resultado = await signer.firmarDocumento(
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        const resultado = await signer.firmarDocumento({
             documento,
-            config.emisor.nit || '00000000000000',
-            config.mh.clavePrivada
-        );
+            nit: emisorConCredenciales.nit,
+            clavePrivada: emisorConCredenciales.mhClavePrivada,
+        });
 
         res.json({
             exito: resultado.exito,
             mensaje: resultado.mensaje,
-            firma: resultado.firma,
+            firma: resultado.exito ? '(firmado correctamente)' : null,
             error: resultado.error,
         });
     } catch (error) {
@@ -235,17 +275,24 @@ const probarFirma = async (req, res, next) => {
 };
 
 /**
- * Probar autenticación con Hacienda
- * GET /api/dte/test-auth
+ * Probar autenticación (con credenciales del tenant)
+ * GET /api/v2/test-auth
  */
 const probarAutenticacion = async (req, res, next) => {
     try {
-        const resultado = await mhSender.autenticar();
+        const { emisor } = req;
+
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        const resultado = await mhSender.autenticar({
+            nit: emisorConCredenciales.nit,
+            claveApi: emisorConCredenciales.mhClaveApi,
+        });
 
         res.json({
             exito: resultado.exito,
             mensaje: resultado.mensaje,
-            tokenObtenido: resultado.exito ? 'Sí (por seguridad no se muestra)' : 'No',
+            tokenObtenido: resultado.exito ? 'Sí' : 'No',
             error: resultado.error,
         });
     } catch (error) {
@@ -255,8 +302,9 @@ const probarAutenticacion = async (req, res, next) => {
 
 module.exports = {
     crearFactura,
-    transmitirDirecto,
+    listarFacturas,
     consultarFactura,
+    estadisticas,
     generarEjemplo,
     probarFirma,
     probarAutenticacion,

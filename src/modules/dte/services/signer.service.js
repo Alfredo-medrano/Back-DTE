@@ -4,6 +4,7 @@
  * Módulo: DTE
  * ========================================
  * Comunicación con el contenedor Docker firmador
+ * VERSIÓN MULTI-TENANT: Recibe credenciales como parámetros
  */
 
 const { dockerClient } = require('../../../shared/integrations');
@@ -50,27 +51,30 @@ const verificarEstado = async () => {
 
 /**
  * Firma un documento DTE con el contenedor Docker
- * @param {object} documento - Documento JSON a firmar
- * @param {string} nit - NIT del emisor
- * @param {string} password - Contraseña de la llave privada
+ * @param {object} params - Parámetros de firma
+ * @param {object} params.documento - Documento JSON a firmar
+ * @param {string} params.nit - NIT del emisor (formato Docker: 14 dígitos)
+ * @param {string} params.clavePrivada - Contraseña de la llave privada
  * @returns {Promise<object>} Documento firmado en formato JWS
  */
-const firmarDocumento = async (documento, nit, password) => {
+const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
     try {
-        console.log('📝 Enviando documento a firmar...');
-        console.log('   NIT:', nit);
+        // Formatear NIT para Docker (14 dígitos)
+        const nitDocker = nit.padStart(14, '0');
+
+        console.log(`📝 [${nit}] Enviando documento a firmar...`);
 
         const payload = {
-            nit: nit,
+            nit: nitDocker,
             activo: true,
-            passwordPri: password,
+            passwordPri: clavePrivada,
             dteJson: documento,
         };
 
         const response = await dockerClient.post('/firmardocumento/', payload);
 
         if (response.data && response.data.body) {
-            console.log('✅ Documento firmado exitosamente');
+            console.log(`✅ [${nit}] Documento firmado exitosamente`);
             return {
                 exito: true,
                 firma: response.data.body,
@@ -85,7 +89,7 @@ const firmarDocumento = async (documento, nit, password) => {
         };
 
     } catch (error) {
-        console.error('❌ Error al firmar:', error.message);
+        console.error(`❌ [${nit}] Error al firmar:`, error.message);
         return {
             exito: false,
             error: error.response?.data || error.message,
@@ -96,9 +100,10 @@ const firmarDocumento = async (documento, nit, password) => {
 
 /**
  * Firma un documento para anulación
+ * @param {object} params - Parámetros de firma
  */
-const firmarAnulacion = async (documentoAnulacion, nit, passwordPri) => {
-    return await firmarDocumento(documentoAnulacion, nit, passwordPri);
+const firmarAnulacion = async ({ documento, nit, clavePrivada }) => {
+    return await firmarDocumento({ documento, nit, clavePrivada });
 };
 
 module.exports = {

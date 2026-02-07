@@ -1,14 +1,14 @@
 /**
  * ========================================
- * PLACEHOLDER: MÓDULO IAM
+ * ÍNDICE DEL MÓDULO IAM
  * ========================================
- * Estructura para futuro módulo de Identity & Access Management
+ * Identity & Access Management para SaaS
  */
 
-// Placeholder exports
+const services = require('./services');
+
 module.exports = {
-    // TODO: Implementar
-    // routes: require('./iam.routes'),
-    // controllers: require('./controllers'),
-    // services: require('./services'),
+    services,
+    apiKeyService: services.apiKeyService,
+    tenantService: services.tenantService,
 };
