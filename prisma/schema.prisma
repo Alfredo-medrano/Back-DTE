@@ -170,9 +170,14 @@ model Dte {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   emisor Emisor @relation(fields: [emisorId], references: [id], onDelete: Cascade)
 
+  // Índices para consultas frecuentes
   @@index([tenantId, fechaEmision])
   @@index([emisorId, tipoDte])
   @@index([status])
+  // Índice compuesto para dashboard (ventas del mes por status)
+  @@index([emisorId, fechaEmision, status])
+  // Índice para retry queue
+  @@index([status, intentos])
   @@map("dtes")
 }
 
