@@ -10,7 +10,7 @@
  */
 
 const axios = require('axios');
-const config = require('../config/env');
+const config = require('../../config/env');
 
 // Almacenamiento temporal del token
 let tokenCache = {

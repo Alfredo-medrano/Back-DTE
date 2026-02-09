@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const facturaController = require('../controllers/facturaController');
+const facturaController = require('../_deprecated/controllers/facturaController');
 
 /**
  * GET /api/status

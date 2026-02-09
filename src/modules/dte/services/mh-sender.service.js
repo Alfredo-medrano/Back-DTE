@@ -8,6 +8,7 @@
  */
 
 const { mhClient, mhAuthClient } = require('../../../shared/integrations');
+const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker');
 
 /**
  * Cache de tokens por NIT (Multi-tenant)
@@ -94,8 +95,11 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
             documento: documentoFirmado,
         };
 
-        const response = await mhClient.post('/fesv/recepciondte', payload, {
-            headers: { 'Authorization': auth.token },
+        // Envío con Circuit Breaker (protección contra caídas de MH)
+        const response = await ejecutarConCircuito('HACIENDA_MH', async () => {
+            return await mhClient.post('/fesv/recepciondte', payload, {
+                headers: { 'Authorization': auth.token },
+            });
         });
 
         if (response.data?.estado === 'PROCESADO') {

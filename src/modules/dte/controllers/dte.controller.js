@@ -9,7 +9,7 @@
 
 const { dteOrchestrator, signer, mhSender } = require('../services');
 const { dteRepository } = require('../repositories');
-const { BadRequestError } = require('../../../shared/errors');
+const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { tenantService } = require('../../iam');
 const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
@@ -146,8 +146,14 @@ const consultarFactura = async (req, res, next) => {
             throw new BadRequestError('Se requiere el código de generación');
         }
 
-        // Buscar en BD local primero
-        const dteLocal = await dteRepository.buscarPorCodigo(codigoGeneracion);
+        // Buscar en BD local - SIEMPRE filtrar por emisorId del tenant actual
+        const dteLocal = await dteRepository.buscarPorCodigo(codigoGeneracion, emisor.id);
+
+        // SEGURIDAD: Si no existe para este tenant, devolver 404
+        // NUNCA revelar si el DTE existe para otro tenant
+        if (!dteLocal) {
+            throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
+        }
 
         // Obtener credenciales del emisor
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
@@ -163,11 +169,11 @@ const consultarFactura = async (req, res, next) => {
 
         res.json({
             exito: true,
-            local: dteLocal ? {
+            local: {
                 status: dteLocal.status,
                 selloRecibido: dteLocal.selloRecibido,
                 fechaEmision: dteLocal.fechaEmision,
-            } : null,
+            },
             hacienda: resultadoMH.data,
         });
     } catch (error) {

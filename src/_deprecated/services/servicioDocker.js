@@ -8,7 +8,7 @@
  */
 
 const axios = require('axios');
-const config = require('../config/env');
+const config = require('../../config/env');
 
 // Cliente HTTP configurado para Docker
 const dockerClient = axios.create({

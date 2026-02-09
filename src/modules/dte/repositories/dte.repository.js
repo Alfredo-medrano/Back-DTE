@@ -83,11 +83,18 @@ const actualizarEstado = async (id, datos) => {
 };
 
 /**
- * Busca un DTE por código de generación
+ * Busca un DTE por código de generación y emisorId
+ * SEGURIDAD: Siempre filtrar por emisorId para garantizar aislamiento multi-tenant
  */
-const buscarPorCodigo = async (codigoGeneracion) => {
-    return await prisma.dte.findUnique({
-        where: { codigoGeneracion },
+const buscarPorCodigo = async (codigoGeneracion, emisorId) => {
+    if (!emisorId) {
+        throw new Error('emisorId es requerido para garantizar aislamiento multi-tenant');
+    }
+    return await prisma.dte.findFirst({
+        where: {
+            codigoGeneracion,
+            emisorId, // CRÍTICO: Filtrar por tenant
+        },
         include: {
             emisor: true,
             tenant: true,

@@ -13,23 +13,23 @@
  * 5. Devolver sello
  */
 
-const config = require('../config/env');
+const config = require('../../config/env');
 const {
     obtenerConfigDTE,
     obtenerVersionDTE,
-} = require('../config/tiposDTE');
+} = require('../../config/tiposDTE');
 const {
     generarCodigoGeneracion,
     generarNumeroControl,
     generarFechaActual,
     generarHoraEmision
-} = require('../utils/generadorUUID');
+} = require('../../utils/generadorUUID');
 const {
     calcularLineaProducto,
     calcularResumenFactura,
     validarCuadre,
     redondear
-} = require('../utils/calculadorIVA');
+} = require('../../utils/calculadorIVA');
 const servicioDocker = require('../services/servicioDocker');
 const servicioMH = require('../services/servicioMH');
 

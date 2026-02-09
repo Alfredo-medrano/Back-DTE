@@ -14,7 +14,12 @@
     "test:credito": "node tests/run_tests.js --tipo=05",
     "test:excluido": "node tests/run_tests.js --tipo=14",
     "test:invalidacion": "node tests/test_invalidacion.js",
-    "test:consulta": "node tests/test_consulta.js"
+    "test:consulta": "node tests/test_consulta.js",
+    "qa:seed": "node scripts/seed_qa.js",
+    "qa:aislamiento": "node scripts/test_aislamiento.js",
+    "qa:ratelimit": "node scripts/test_rate_limit.js",
+    "qa:full": "node scripts/qa_full.js",
+    "qa:saas": "node scripts/qa_full.js --only-saas"
   },
   "keywords": [
     "facturacion",

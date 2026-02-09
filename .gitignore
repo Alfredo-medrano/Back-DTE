@@ -39,3 +39,6 @@ build/
 .cache/
 
 /src/generated/prisma
+
+# QA Credentials (DO NOT COMMIT)
+.qa_keys.json
