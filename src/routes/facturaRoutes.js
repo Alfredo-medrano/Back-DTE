@@ -1,58 +1,53 @@
 /**
  * ========================================
- * RUTAS DE FACTURACIÓN
- * Middleware Facturación Electrónica - El Salvador
+ * RUTAS LEGACY (v1)
  * ========================================
+ * Estas rutas se mantienen por compatibilidad.
+ * Para nuevos clientes, usar /api/dte/v2/*
+ * 
+ * @deprecated Usar rutas v2 multi-tenant
  */
 
 const express = require('express');
 const router = express.Router();
-const facturaController = require('../_deprecated/controllers/facturaController');
 
 /**
  * GET /api/status
- * Verifica el estado del sistema (Docker + Hacienda)
+ * Health check básico del servidor
  */
-router.get('/status', facturaController.obtenerEstado);
+router.get('/status', (req, res) => {
+    res.json({
+        exito: true,
+        sistema: 'Middleware Facturación Electrónica - El Salvador',
+        version: '2.0.0',
+        arquitectura: 'Multi-Tenant SaaS',
+        timestamp: new Date().toISOString(),
+        nota: 'Use /api/dte/v2/* para endpoints multi-tenant',
+    });
+});
 
 /**
- * POST /api/facturar
- * Crea una nueva factura electrónica
- * Body: { emisor, receptor, items[], tipoDte?, correlativo? }
+ * Middleware de deprecación para rutas legacy
  */
-router.post('/facturar', facturaController.crearFactura);
+const deprecationWarning = (req, res) => {
+    res.status(410).json({
+        exito: false,
+        codigo: 'DEPRECATED',
+        error: 'Este endpoint está deprecado',
+        migracion: {
+            nuevo_endpoint: req.path.replace('/api/', '/api/dte/v2/'),
+            documentacion: '/api/dte/v2/ejemplo',
+            nota: 'Las rutas v1 requieren migración a v2 con API Key multi-tenant',
+        },
+    });
+};
 
-/**
- * GET /api/factura/:codigoGeneracion
- * Consulta el estado de una factura
- */
-router.get('/factura/:codigoGeneracion', facturaController.consultarFactura);
-
-/**
- * POST /api/test-firma
- * Prueba la firma de un documento (sin enviar a Hacienda)
- * Body: cualquier JSON
- */
-router.post('/test-firma', facturaController.probarFirma);
-
-/**
- * GET /api/ejemplo
- * Genera un documento DTE de ejemplo según Anexo II
- * (sin firmar ni enviar)
- */
-router.get('/ejemplo', facturaController.generarEjemplo);
-
-/**
- * GET /api/test-auth
- * Prueba la autenticación con Hacienda
- */
-router.get('/test-auth', facturaController.probarAutenticacion);
-
-/**
- * POST /api/transmitir
- * Transmite un documento DTE completo (JSON Anexo II ya armado)
- * Body: JSON completo con identificacion, emisor, receptor, cuerpoDocumento, resumen
- */
-router.post('/transmitir', facturaController.transmitirDirecto);
+// Endpoints deprecados - devuelven 410 Gone
+router.post('/facturar', deprecationWarning);
+router.get('/factura/:codigoGeneracion', deprecationWarning);
+router.post('/test-firma', deprecationWarning);
+router.get('/ejemplo', deprecationWarning);
+router.get('/test-auth', deprecationWarning);
+router.post('/transmitir', deprecationWarning);
 
 module.exports = router;

@@ -19,7 +19,14 @@
     "qa:aislamiento": "node scripts/test_aislamiento.js",
     "qa:ratelimit": "node scripts/test_rate_limit.js",
     "qa:full": "node scripts/qa_full.js",
-    "qa:saas": "node scripts/qa_full.js --only-saas"
+    "qa:saas": "node scripts/qa_full.js --only-saas",
+    "worker:retries": "node src/modules/dte/workers/retry-worker.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:staging": "pm2 start ecosystem.config.js --env staging",
+    "pm2:prod": "pm2 start ecosystem.config.js --env production",
+    "pm2:restart": "pm2 reload ecosystem.config.js",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status"
   },
   "keywords": [
     "facturacion",
