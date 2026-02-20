@@ -75,13 +75,13 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
             codPuntoVenta: emisor.codPuntoVentaMH || 'P001',
         },
         receptor: {
-            // CCF REQUIERE NRC del receptor
-            tipoDocumento: '36', // Siempre NIT para CCF
-            numDocumento: receptor.numDocumento,
+            // CCF REQUIERE NIT y NRC del receptor de forma directa (sin tipoDocumento)
+            nit: receptor.nit, // OBLIGATORIO en DTE-03
             nrc: receptor.nrc, // OBLIGATORIO
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad,
             descActividad: (receptor.descActividad || '').toUpperCase(),
+            nombreComercial: receptor.nombreComercial?.toUpperCase() || null,
             direccion: receptor.direccion ? {
                 departamento: receptor.direccion.departamento || '06',
                 municipio: receptor.direccion.municipio || '14',
@@ -93,7 +93,31 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         otrosDocumentos: null,
         ventaTercero: null,
         cuerpoDocumento,
-        resumen,
+        resumen: {
+            totalNoSuj: resumen.totalNoSuj,
+            totalExenta: resumen.totalExenta,
+            totalGravada: resumen.totalGravada,
+            subTotalVentas: resumen.subTotalVentas,
+            descuNoSuj: resumen.descuNoSuj,
+            descuExenta: resumen.descuExenta,
+            descuGravada: resumen.descuGravada,
+            porcentajeDescuento: resumen.porcentajeDescuento,
+            totalDescu: resumen.totalDescu,
+            tributos: resumen.tributos,
+            subTotal: resumen.subTotal,
+            ivaPerci1: 0.00, // CAMPO REQUERIDO DTE-03
+            ivaRete1: resumen.ivaRete1,
+            reteRenta: resumen.reteRenta,
+            montoTotalOperacion: resumen.montoTotalOperacion,
+            totalNoGravado: resumen.totalNoGravado,
+            totalPagar: resumen.totalPagar,
+            totalLetras: resumen.totalLetras,
+            saldoFavor: resumen.saldoFavor,
+            condicionOperacion: resumen.condicionOperacion,
+            pagos: resumen.pagos,
+            numPagoElectronico: resumen.numPagoElectronico,
+            // NOTA: totalIva NO va en DTE-03
+        },
         extension: null,
         apendice: null,
     };

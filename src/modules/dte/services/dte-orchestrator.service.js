@@ -17,6 +17,8 @@ const { obtenerConfigDTE } = require('../constants');
 const { calcularLineaProducto, calcularResumenFactura, validarCuadre } = require('./dte-calculator.service');
 const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
+const feBuilder = require('../builders/fe.builder');
+const ccfBuilder = require('../builders/ccf.builder');
 
 /**
  * Procesa una factura electrónica completa (MULTI-TENANT)
@@ -35,53 +37,46 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
         condicionOperacion = 1,
     } = datos;
 
-    // Generar identificadores
-    const codigoGeneracion = generarCodigoGeneracion();
-    const codigoEstablecimiento = (emisor.codEstableMH || 'M001') + (emisor.codPuntoVentaMH || 'P001');
-    const correlativoFinal = correlativo || 1; // En producción se obtiene del emisor
-    const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativoFinal);
-    const fechaEmision = generarFechaActual();
-    const horaEmision = generarHoraEmision();
-
-    // Preparar NIT para Hacienda (últimos 9 dígitos)
-    const nitHacienda = emisor.nit.slice(-9);
-
     console.log(`📄 [Tenant: ${tenantId}] Procesando ${tipoDte} para ${receptor.nombre || 'RECEPTOR'}`);
 
-    // Procesar cuerpo del documento
-    const cuerpoDocumento = items.map((item, index) => {
-        return calcularLineaProducto(item, index + 1, tipoDte);
-    });
+    let documentoDTE;
 
-    // Calcular resumen
-    const resumen = calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte);
-    const validacion = validarCuadre(resumen);
-    if (!validacion.valido) {
-        console.warn('⚠️ Advertencia:', validacion.mensaje);
+    // Seleccionar builder según tipo de DTE
+    try {
+        console.log(`🛠️ Construyendo DTE ${tipoDte}...`);
+        console.log('Datos recibidos en orchestrator:', JSON.stringify(datos, null, 2));
+
+        if (!items || !Array.isArray(items)) {
+            throw new Error(`Los items son requeridos y deben ser un array. Recibido: ${typeof items}`);
+        }
+
+        if (tipoDte === '03') {
+            documentoDTE = ccfBuilder.construir({
+                emisor,
+                receptor,
+                items,
+                correlativo,
+                condicionOperacion
+            });
+        } else {
+            // Por defecto FE (01)
+            documentoDTE = feBuilder.construir({
+                emisor,
+                receptor,
+                items,
+                correlativo,
+                condicionOperacion
+            });
+        }
+    } catch (buildError) {
+        console.error('❌ Error construyendo documento DTE:', buildError);
+        console.error('Stack:', buildError.stack);
+        throw buildError;
     }
 
-    // Obtener configuración del tipo DTE
-    const configDte = obtenerConfigDTE(tipoDte);
-    const versionDte = configDte ? configDte.version : 1;
+    const { version, codigoGeneracion, numeroControl } = documentoDTE.identificacion;
 
-    // Construir documento DTE
-    const documentoDTE = construirDocumentoDTE({
-        identificacion: {
-            version: versionDte,
-            ambiente: emisor.ambiente,
-            tipoDte,
-            numeroControl,
-            codigoGeneracion,
-            fechaEmision,
-            horaEmision,
-        },
-        emisor: formatearEmisor(emisor, nitHacienda),
-        receptor,
-        cuerpoDocumento,
-        resumen,
-    });
-
-    console.log('✅ Documento DTE construido según Anexo II');
+    console.log(`✅ Documento DTE construido: ${codigoGeneracion}`);
 
     // Firmar documento
     console.log('🔏 Enviando a firmar...');
@@ -106,7 +101,7 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
         documentoFirmado: resultadoFirma.firma,
         ambiente: emisor.ambiente,
         tipoDte,
-        version: versionDte,
+        version,
         codigoGeneracion,
         credenciales: {
             nit: emisor.nit,
@@ -134,80 +129,6 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
 
 /**
  * Formatea los datos del emisor para el documento DTE
- */
-const formatearEmisor = (emisor, nitHacienda) => {
-    return {
-        nit: nitHacienda,
-        nrc: emisor.nrc,
-        nombre: (emisor.nombre || '').toUpperCase(),
-        codActividad: emisor.codActividad,
-        descActividad: (emisor.descActividad || '').toUpperCase(),
-        nombreComercial: emisor.nombreComercial?.toUpperCase() || null,
-        tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
-        direccion: {
-            departamento: emisor.departamento || '06',
-            municipio: emisor.municipio || '14',
-            complemento: (emisor.complemento || '').toUpperCase(),
-        },
-        telefono: emisor.telefono,
-        correo: emisor.correo,
-        codEstableMH: emisor.codEstableMH || 'M001',
-        codEstable: emisor.codEstableMH || 'M001',
-        codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
-        codPuntoVenta: emisor.codPuntoVentaMH || 'P001',
-    };
-};
-
-/**
- * Construye el documento DTE estructura Anexo II
- */
-const construirDocumentoDTE = ({ identificacion, emisor, receptor, cuerpoDocumento, resumen }) => {
-    return {
-        identificacion: {
-            version: identificacion.version,
-            ambiente: identificacion.ambiente,
-            tipoDte: identificacion.tipoDte,
-            numeroControl: identificacion.numeroControl,
-            codigoGeneracion: identificacion.codigoGeneracion,
-            tipoModelo: 1,
-            tipoOperacion: 1,
-            tipoContingencia: null,
-            motivoContin: null,
-            fecEmi: identificacion.fechaEmision,
-            horEmi: identificacion.horaEmision,
-            tipoMoneda: 'USD',
-        },
-        documentoRelacionado: null,
-        emisor,
-        receptor: {
-            tipoDocumento: receptor.tipoDocumento || '36',
-            numDocumento: receptor.numDocumento,
-            nrc: receptor.nrc || null,
-            nombre: (receptor.nombre || '').toUpperCase(),
-            codActividad: receptor.codActividad || null,
-            descActividad: receptor.descActividad?.toUpperCase() || null,
-            direccion: {
-                departamento: receptor.direccion?.departamento || '06',
-                municipio: receptor.direccion?.municipio || '14',
-                complemento: (receptor.direccion?.complemento || '').toUpperCase(),
-            },
-            telefono: receptor.telefono || null,
-            correo: receptor.correo,
-        },
-        otrosDocumentos: null,
-        ventaTercero: null,
-        cuerpoDocumento,
-        resumen,
-        extension: null,
-        apendice: null,
-    };
-};
-
-/**
- * Transmite un documento DTE ya construido (MULTI-TENANT)
- * @param {object} params - Parámetros de transmisión
- * @param {object} params.documentoDTE - Documento DTE completo
- * @param {object} params.emisor - Emisor con credenciales desencriptadas
  */
 const transmitirDirecto = async ({ documentoDTE, emisor }) => {
     const tipoDte = documentoDTE.identificacion.tipoDte || '01';
@@ -242,7 +163,5 @@ const transmitirDirecto = async ({ documentoDTE, emisor }) => {
 
 module.exports = {
     procesarFactura,
-    construirDocumentoDTE,
     transmitirDirecto,
-    formatearEmisor,
 };

@@ -1,0 +1,401 @@
+{
+    "info": {
+        "_postman_id": "dte-el-salvador-v2",
+        "name": "DTE El Salvador - API v2",
+        "description": "Colección completa para probar el Middleware de Facturación Electrónica Multi-Tenant",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:3000",
+            "type": "string"
+        },
+        {
+            "key": "api_key",
+            "value": "sk_test_2a3f0e5ab6a40b703735ed625369a4ec1960a8c1eee41970",
+            "type": "string"
+        },
+        {
+            "key": "emisor_id",
+            "value": "b7c1bae9-f393-4fd3-a79f-4b14bef8aa77",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "📋 Públicos",
+            "item": [
+                {
+                    "name": "1. Health Check (Legacy)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "status"
+                            ]
+                        },
+                        "description": "Health check básico del servidor"
+                    }
+                },
+                {
+                    "name": "2. Estado del Sistema",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "status"
+                            ]
+                        },
+                        "description": "Estado completo: servidor, Docker, Hacienda"
+                    }
+                },
+                {
+                    "name": "3. Documento de Ejemplo",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/ejemplo",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "ejemplo"
+                            ]
+                        },
+                        "description": "Genera estructura JSON según Anexo II"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔐 Protegidos v2",
+            "item": [
+                {
+                    "name": "4. Test Autenticación Hacienda",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/test-auth",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "test-auth"
+                            ]
+                        },
+                        "description": "Prueba autenticación con Hacienda usando credenciales del emisor"
+                    }
+                },
+                {
+                    "name": "5. Test Firma Docker",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"test\": \"documento de prueba\",\n  \"datos\": {\n    \"valor\": 123\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/test-firma",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "test-firma"
+                            ]
+                        },
+                        "description": "Prueba firma con Docker Firmador"
+                    }
+                },
+                {
+                    "name": "6. Crear Factura (DTE-01) ⭐",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"01\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE DE PRUEBA SA DE CV\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"COLONIA ESCALÓN, CALLE EJEMPLO #123\"\n    },\n    \"telefono\": \"22223333\",\n    \"correo\": \"cliente@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"SERVICIO DE CONSULTORIA\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 100.00,\n      \"tipoItem\": 2\n    },\n    {\n      \"descripcion\": \"PRODUCTO EJEMPLO\",\n      \"cantidad\": 2,\n      \"precioUnitario\": 25.50,\n      \"codigo\": \"PROD001\",\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "Crear Factura Electrónica consumidor final"
+                    }
+                },
+                {
+                    "name": "7. Crear Crédito Fiscal (DTE-03)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"03\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06140101941234\",\n    \"nrc\": \"1234567\",\n    \"nombre\": \"EMPRESA CONTRIBUYENTE SA DE CV\",\n    \"codActividad\": \"46900\",\n    \"descActividad\": \"VENTA AL POR MAYOR\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"ZONA INDUSTRIAL\"\n    },\n    \"telefono\": \"22224444\",\n    \"correo\": \"empresa@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"INSUMOS INDUSTRIALES\",\n      \"cantidad\": 10,\n      \"precioUnitario\": 50.00,\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 2\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "Crear Crédito Fiscal para contribuyentes"
+                    }
+                },
+                {
+                    "name": "8. Listar Facturas",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturas?page=1&limit=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturas"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "tipoDte",
+                                    "value": "01",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "PROCESADO",
+                                    "disabled": true
+                                }
+                            ]
+                        },
+                        "description": "Lista DTEs del tenant con paginación y filtros"
+                    }
+                },
+                {
+                    "name": "9. Consultar Factura por Código",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/factura/CODIGO-DE-GENERACION-AQUI",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "factura",
+                                "CODIGO-DE-GENERACION-AQUI"
+                            ]
+                        },
+                        "description": "Consulta estado de un DTE específico (reemplazar CODIGO-DE-GENERACION-AQUI)"
+                    }
+                },
+                {
+                    "name": "10. Estadísticas del Tenant",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/estadisticas?periodo=mes",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "estadisticas"
+                            ],
+                            "query": [
+                                {
+                                    "key": "periodo",
+                                    "value": "mes"
+                                }
+                            ]
+                        },
+                        "description": "Estadísticas de facturación del tenant"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🛡️ Tests de Seguridad",
+            "item": [
+                {
+                    "name": "Test Rate Limiting (Tenant B)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer sk_test_5b8fc08b4688f0ff49f088e68c4558ccc0eade2dc0eba3eb"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "c9a17b77-72e1-4c29-9048-6b15b8c294cd"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/test-auth",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "test-auth"
+                            ]
+                        },
+                        "description": "Ejecutar 6+ veces rápido → debe recibir 429"
+                    }
+                },
+                {
+                    "name": "Test Sin API Key",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturas",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturas"
+                            ]
+                        },
+                        "description": "Sin Authorization header → debe recibir 401"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -100,6 +100,8 @@ const crearFactura = async (req, res, next) => {
             });
         }
     } catch (error) {
+        console.error('❌ Error en crearFactura:', error);
+        console.error('Stack:', error.stack);
         next(error);
     }
 };

@@ -159,6 +159,7 @@ app.listen(PORT, () => {
     console.log('========================================');
     console.log('  MIDDLEWARE FACTURACIÓN ELECTRÓNICA');
     console.log('  El Salvador - DTE');
+    console.log('  DEBUG MODE ACTIVATED v2');
     console.log('========================================');
     console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
     console.log(`📍 URL: http://localhost:${PORT}`);
