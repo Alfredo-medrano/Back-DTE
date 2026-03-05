@@ -20,6 +20,7 @@ const { prisma } = require('./shared/db');
 // Módulos
 const { dteRoutes, services: dteServices } = require('./modules/dte');
 const { retryQueue } = dteServices;
+const iamRoutes = require('./modules/iam/iam.routes');
 
 // Crear aplicación Express
 const app = express();
@@ -98,6 +99,10 @@ app.get('/health', async (req, res) => {
 
 // Módulo DTE (rutas públicas + v2 protegidas)
 app.use('/api/dte', dteRoutes);
+
+// Panel de administración IAM (Tenants, Emisores, API Keys)
+// Protegido por X-Admin-Key header (ver iam.routes.js)
+app.use('/admin', iamRoutes);
 
 // ========================================
 // MANEJO DE ERRORES

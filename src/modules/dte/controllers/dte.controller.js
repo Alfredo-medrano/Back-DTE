@@ -365,6 +365,84 @@ const probarAutenticacion = async (req, res, next) => {
     }
 };
 
+/**
+ * Anular un DTE ya procesado
+ * POST /api/dte/v2/factura/:codigoGeneracion/anular
+ */
+const anularDTE = async (req, res, next) => {
+    try {
+        const { codigoGeneracion } = req.params;
+        const { motivoAnulacion, nombreSolicita, tipoSolicita, numDocSolicita, nombreResponsable, tipoResponsable, numDocResponsable } = req.body;
+        const { emisor } = req;
+
+        if (!motivoAnulacion) {
+            throw new BadRequestError('motivoAnulacion es requerido', 'DATOS_INCOMPLETOS');
+        }
+
+        // Buscar DTE local — SIEMPRE filtrar por emisorId (multi-tenant)
+        const dteLocal = await dteRepository.buscarPorCodigo(codigoGeneracion, emisor.id);
+        if (!dteLocal) {
+            throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
+        }
+
+        if (dteLocal.status !== 'PROCESADO') {
+            throw new BadRequestError(
+                `Solo se pueden anular DTEs en estado PROCESADO. Estado actual: ${dteLocal.status}`,
+                'ESTADO_INVALIDO'
+            );
+        }
+
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        // Construir documento de anulación (Invalidación)
+        const documentoAnulacion = {
+            nit: emisorConCredenciales.nit,
+            activo: true,
+            ambiente: emisorConCredenciales.ambiente,
+            codigoGeneracion: require('../../../shared/utils').generarCodigoGeneracion(),
+            selloRecibido: dteLocal.selloRecibido,
+            documento: {
+                tipoDte: dteLocal.tipoDte,
+                codigoGeneracion,
+                motivoAnulacion,
+                nombreResponsable: (nombreResponsable || emisorConCredenciales.nombre).toUpperCase(),
+                tipoDocResponsable: tipoResponsable || '36',
+                numDocResponsable: numDocResponsable || emisorConCredenciales.nit,
+                nombreSolicita: (nombreSolicita || '').toUpperCase(),
+                tipoDocSolicita: tipoSolicita || '36',
+                numDocSolicita: numDocSolicita || '',
+                fechaAnulacion: new Date().toISOString().split('T')[0],
+            },
+        };
+
+        const resultado = await mhSender.anularDTE({
+            documentoAnulacion,
+            ambiente: emisorConCredenciales.ambiente,
+            credenciales: {
+                nit: emisorConCredenciales.nit,
+                claveApi: emisorConCredenciales.mhClaveApi,
+            },
+        });
+
+        if (resultado.exito) {
+            // Actualizar estado en BD local
+            await dteRepository.actualizarEstado(dteLocal.id, {
+                status: 'ANULADO',
+                observaciones: `Anulado: ${motivoAnulacion}`,
+            });
+        }
+
+        res.json({
+            exito: resultado.exito,
+            mensaje: resultado.exito ? 'DTE anulado exitosamente' : 'Error al anular DTE en Hacienda',
+            datos: resultado.data || null,
+            error: resultado.exito ? null : resultado.error,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     crearFactura,
     listarFacturas,
@@ -373,4 +451,5 @@ module.exports = {
     generarEjemplo,
     probarFirma,
     probarAutenticacion,
+    anularDTE,
 };

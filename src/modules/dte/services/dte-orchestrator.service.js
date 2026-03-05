@@ -139,9 +139,39 @@ const transmitirDirecto = async ({ documentoDTE, emisor }) => {
     return await firmarYEnviar({ documentoDTE, emisor, tipoDte });
 };
 
+/**
+ * Reintenta el envío de un DTE fallido ya guardado en BD.
+ * Usa el jsonOriginal almacenado para re-firmar y re-enviar.
+ * Es llamado por retry-worker.js y retry-queue.service.js.
+ *
+ * @param {object} params
+ * @param {object} params.dte   - Registro DTE traído desde BD (con jsonOriginal)
+ * @param {object} params.emisor - Emisor con credenciales desencriptadas
+ * @returns {Promise<object>} Resultado del reintento
+ */
+const reintentarEnvio = async ({ dte, emisor }) => {
+    const { jsonOriginal, tipoDte, codigoGeneracion } = dte;
+
+    if (!jsonOriginal) {
+        return {
+            exito: false,
+            paso: 'VALIDACION',
+            error: `DTE ${codigoGeneracion} no tiene jsonOriginal guardado`,
+        };
+    }
+
+    console.log(`🔄 Reintentando envío DTE ${codigoGeneracion} (tipo ${tipoDte})...`);
+    return await firmarYEnviar({
+        documentoDTE: jsonOriginal,
+        emisor,
+        tipoDte: tipoDte || jsonOriginal.identificacion?.tipoDte || '01',
+    });
+};
+
 module.exports = {
     construirDocumento,
     firmarYEnviar,
     procesarFactura,
     transmitirDirecto,
+    reintentarEnvio,
 };

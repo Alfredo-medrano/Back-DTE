@@ -10,7 +10,12 @@ const { prisma } = require('../../../shared/db');
 const crypto = require('crypto');
 
 // Obtener clave de encriptación del entorno
-const CRYPTO_KEY = process.env.CRYPTO_SECRET_KEY || 'default_key_change_in_production_32bytes';
+const CRYPTO_KEY = process.env.CRYPTO_SECRET_KEY;
+if (!CRYPTO_KEY || CRYPTO_KEY.length < 32) {
+    console.error('❌ [SECURITY] CRYPTO_SECRET_KEY no está definida o tiene menos de 32 caracteres.');
+    console.error('   Defínela en tu .env: CRYPTO_SECRET_KEY=una_clave_aleatoria_de_al_menos_32_chars');
+    process.exit(1);
+}
 const ALGORITHM = 'aes-256-cbc';
 
 /**

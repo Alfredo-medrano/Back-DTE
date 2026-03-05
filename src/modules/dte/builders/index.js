@@ -10,6 +10,8 @@ const baseBuilder = require('./base.builder');
 const feBuilder = require('./fe.builder');
 const ccfBuilder = require('./ccf.builder');
 const ncBuilder = require('./nc.builder');
+const ndBuilder = require('./nd.builder');
+const fseBuilder = require('./fse.builder');
 
 /**
  * Mapa de builders por tipo DTE
@@ -18,11 +20,13 @@ const builders = {
     '01': feBuilder,
     '03': ccfBuilder,
     '05': ncBuilder,
+    '06': ndBuilder,
+    '14': fseBuilder,
 };
 
 /**
  * Obtiene el builder correspondiente al tipo DTE
- * @param {string} tipoDte - Tipo de DTE (01, 03, 05, etc.)
+ * @param {string} tipoDte - Tipo de DTE (01, 03, 05, 06, 14)
  * @returns {object|null} Builder o null si no existe
  */
 const obtenerBuilder = (tipoDte) => {
@@ -38,7 +42,7 @@ const construirDocumento = (tipoDte, params) => {
     const builder = obtenerBuilder(tipoDte);
 
     if (!builder) {
-        throw new Error(`Builder no encontrado para tipo DTE: ${tipoDte}`);
+        throw new Error(`Tipo DTE '${tipoDte}' no soportado. Tipos disponibles: ${Object.keys(builders).join(', ')}`);
     }
 
     return builder.construir(params);
@@ -60,6 +64,8 @@ module.exports = {
     feBuilder,
     ccfBuilder,
     ncBuilder,
+    ndBuilder,
+    fseBuilder,
 
     // Helpers
     obtenerBuilder,

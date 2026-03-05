@@ -42,6 +42,12 @@ v2Router.post('/facturar',
     dteController.crearFactura
 );
 
+// Anulación de DTE
+v2Router.post('/factura/:codigoGeneracion/anular',
+    requierePermisos('dte:create'),
+    dteController.anularDTE
+);
+
 // Consultas
 v2Router.get('/facturas', requierePermisos('dte:read'), dteController.listarFacturas);
 v2Router.get('/factura/:codigoGeneracion', requierePermisos('dte:read'), dteController.consultarFactura);
