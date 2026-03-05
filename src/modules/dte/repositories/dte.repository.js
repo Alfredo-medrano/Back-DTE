@@ -7,7 +7,7 @@
  * Patrón: Outbox para tracking de estados
  */
 
-const { prisma } = require('../../../shared/db');
+const { prisma, conReintento } = require('../../../shared/db');
 
 /**
  * Crea un registro DTE en estado CREADO
@@ -30,7 +30,7 @@ const crear = async (datos) => {
         jsonOriginal,
     } = datos;
 
-    const dte = await prisma.dte.create({
+    const dte = await conReintento('DTE.crear', () => prisma.dte.create({
         data: {
             tenantId,
             emisorId,
@@ -42,7 +42,7 @@ const crear = async (datos) => {
             fechaEmision: new Date(fechaEmision),
             horaEmision,
             receptorTipoDoc: receptor.tipoDocumento || '36',
-            receptorNumDoc: receptor.numDocumento,
+            receptorNumDoc: receptor.numDocumento || receptor.nit,
             receptorNombre: receptor.nombre,
             receptorCorreo: receptor.correo || null,
             totalGravada: totales.totalGravada,
@@ -51,7 +51,7 @@ const crear = async (datos) => {
             status: 'CREADO',
             jsonOriginal,
         },
-    });
+    }));
 
     console.log(`📝 DTE registrado: ${codigoGeneracion} [CREADO]`);
     return dte;
@@ -65,18 +65,35 @@ const crear = async (datos) => {
 const actualizarEstado = async (id, datos) => {
     const { status, selloRecibido, fechaProcesamiento, observaciones, jsonFirmado, errorLog } = datos;
 
-    const dte = await prisma.dte.update({
+    // Hacienda devuelve fecha en formato "dd/MM/yyyy HH:mm:ss", parsear manualmente
+    let fechaProc;
+    if (fechaProcesamiento) {
+        const match = fechaProcesamiento.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})$/);
+        if (match) {
+            // Convertir dd/MM/yyyy HH:mm:ss → yyyy-MM-dd HH:mm:ss
+            fechaProc = new Date(`${match[3]}-${match[2]}-${match[1]}T${match[4]}`);
+        } else {
+            fechaProc = new Date(fechaProcesamiento);
+        }
+        // Si sigue siendo inválida, usar fecha actual
+        if (isNaN(fechaProc.getTime())) {
+            console.warn(`⚠️ fechaProcesamiento inválida: "${fechaProcesamiento}", usando fecha actual`);
+            fechaProc = new Date();
+        }
+    }
+
+    const dte = await conReintento('DTE.actualizarEstado', () => prisma.dte.update({
         where: { id },
         data: {
             status,
             selloRecibido: selloRecibido || undefined,
-            fechaProcesamiento: fechaProcesamiento ? new Date(fechaProcesamiento) : undefined,
+            fechaProcesamiento: fechaProc || undefined,
             observaciones: observaciones || undefined,
             jsonFirmado: jsonFirmado || undefined,
             errorLog: errorLog || undefined,
             intentos: { increment: 1 },
         },
-    });
+    }));
 
     console.log(`📝 DTE ${id} actualizado: [${status}]`);
     return dte;

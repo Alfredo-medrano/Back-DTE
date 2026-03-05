@@ -5,7 +5,7 @@
  * ========================================
  */
 
-const { TIPOS_DTE, CODIGO_IVA, DESCRIPCION_IVA, TASA_IVA } = require('./dte-types');
+const { TIPOS_DTE, CODIGO_IVA, DESCRIPCION_IVA } = require('./dte-types');
 const { IVA_RATE, RETENCION_RENTA_RATE, LIMITE_RETENCION } = require('./tax-rates');
 
 /**
@@ -95,11 +95,11 @@ module.exports = {
     // Catálogo
     TIPOS_DTE,
 
-    // Constantes IVA
+    // Constantes IVA (fuente única: IVA_RATE de tax-rates.js)
     CODIGO_IVA,
     DESCRIPCION_IVA,
-    TASA_IVA,
     IVA_RATE,
+    TASA_IVA: IVA_RATE, // Alias para backward compatibility
 
     // Constantes retención
     RETENCION_RENTA_RATE,

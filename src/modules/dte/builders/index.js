@@ -6,6 +6,7 @@
  * Patrón Builder para construcción de DTEs
  */
 
+const baseBuilder = require('./base.builder');
 const feBuilder = require('./fe.builder');
 const ccfBuilder = require('./ccf.builder');
 const ncBuilder = require('./nc.builder');
@@ -55,6 +56,7 @@ const tiposSoportados = () => {
 
 module.exports = {
     // Builders individuales
+    baseBuilder,
     feBuilder,
     ccfBuilder,
     ncBuilder,

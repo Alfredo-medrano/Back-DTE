@@ -145,14 +145,12 @@ const TIPOS_DTE = {
     },
 };
 
-// Constantes de IVA
+// Constantes de IVA (la tasa numérica está centralizada en tax-rates.js como IVA_RATE)
 const CODIGO_IVA = '20';
 const DESCRIPCION_IVA = 'Impuesto al Valor Agregado 13%';
-const TASA_IVA = 0.13;
 
 module.exports = {
     TIPOS_DTE,
     CODIGO_IVA,
     DESCRIPCION_IVA,
-    TASA_IVA,
 };

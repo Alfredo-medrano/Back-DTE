@@ -6,7 +6,7 @@
  */
 
 const { generarCodigoGeneracion, generarNumeroControl } = require('./uuid-generator');
-const { generarFechaActual, generarHoraEmision, generarFechaEmision, formatearFecha } = require('./date-formatter');
+const { generarFechaActual, generarHoraEmision, generarTimestampEmision, generarFechaEmision, formatearFecha } = require('./date-formatter');
 const circuitBreaker = require('./circuit-breaker');
 
 module.exports = {
@@ -17,6 +17,7 @@ module.exports = {
     // Fechas
     generarFechaActual,
     generarHoraEmision,
+    generarTimestampEmision,
     generarFechaEmision,
     formatearFecha,
 

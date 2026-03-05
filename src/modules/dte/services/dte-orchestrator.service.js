@@ -4,81 +4,69 @@
  * Módulo: DTE
  * ========================================
  * Orquesta el flujo completo de facturación:
- * 1. Validar datos
- * 2. Construir documento DTE
- * 3. Firmar con Docker
- * 4. Enviar a Hacienda
+ * 1. Construir documento DTE
+ * 2. Firmar con Docker
+ * 3. Enviar a Hacienda
  * 
  * VERSIÓN MULTI-TENANT: Recibe contexto del tenant
+ * PATRÓN OUTBOX: El controller guarda en BD entre cada paso
  */
 
-const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
-const { obtenerConfigDTE } = require('../constants');
-const { calcularLineaProducto, calcularResumenFactura, validarCuadre } = require('./dte-calculator.service');
 const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
-const feBuilder = require('../builders/fe.builder');
-const ccfBuilder = require('../builders/ccf.builder');
+const { construirDocumento: buildDTE } = require('../builders');
 
 /**
- * Procesa una factura electrónica completa (MULTI-TENANT)
- * @param {object} params - Parámetros de procesamiento
- * @param {object} params.datos - Datos de la factura (receptor, items, etc.)
- * @param {object} params.emisor - Datos del emisor desde BD (con credenciales desencriptadas)
- * @param {string} params.tenantId - ID del tenant
- * @returns {Promise<object>} Resultado del procesamiento
+ * Construye el documento DTE sin firmar ni enviar.
+ * Permite al controller guardarlo en BD antes de los pasos externos.
+ * @param {object} params - Parámetros de construcción
+ * @returns {object} Documento DTE construido
  */
-const procesarFactura = async ({ datos, emisor, tenantId }) => {
+const construirDocumento = ({ datos, emisor, tenantId }) => {
     const {
         receptor,
         items,
         tipoDte = '01',
         correlativo,
         condicionOperacion = 1,
+        documentoRelacionado = null,
     } = datos;
 
-    console.log(`📄 [Tenant: ${tenantId}] Procesando ${tipoDte} para ${receptor.nombre || 'RECEPTOR'}`);
+    console.log(`📄 [Tenant: ${tenantId}] Construyendo ${tipoDte} para ${receptor.nombre || 'RECEPTOR'}`);
+
+    if (!items || !Array.isArray(items)) {
+        throw new Error(`Los items son requeridos y deben ser un array. Recibido: ${typeof items}`);
+    }
 
     let documentoDTE;
 
-    // Seleccionar builder según tipo de DTE
     try {
-        console.log(`🛠️ Construyendo DTE ${tipoDte}...`);
-        console.log('Datos recibidos en orchestrator:', JSON.stringify(datos, null, 2));
-
-        if (!items || !Array.isArray(items)) {
-            throw new Error(`Los items son requeridos y deben ser un array. Recibido: ${typeof items}`);
-        }
-
-        if (tipoDte === '03') {
-            documentoDTE = ccfBuilder.construir({
-                emisor,
-                receptor,
-                items,
-                correlativo,
-                condicionOperacion
-            });
-        } else {
-            // Por defecto FE (01)
-            documentoDTE = feBuilder.construir({
-                emisor,
-                receptor,
-                items,
-                correlativo,
-                condicionOperacion
-            });
-        }
+        documentoDTE = buildDTE(tipoDte, {
+            emisor,
+            receptor,
+            items,
+            correlativo,
+            condicionOperacion,
+            documentoRelacionado,
+        });
     } catch (buildError) {
-        console.error('❌ Error construyendo documento DTE:', buildError);
-        console.error('Stack:', buildError.stack);
-        throw buildError;
+        throw new Error(`Builder DTE-${tipoDte}: ${buildError.message}`);
     }
 
+    console.log(`✅ Documento DTE construido: ${documentoDTE.identificacion.codigoGeneracion}`);
+    return documentoDTE;
+};
+
+/**
+ * Firma y envía un documento DTE ya construido.
+ * Se ejecuta DESPUÉS de que el controller haya guardado el documento en BD.
+ * @param {object} params - Parámetros de envío
+ * @returns {Promise<object>} Resultado del procesamiento
+ */
+const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
     const { version, codigoGeneracion, numeroControl } = documentoDTE.identificacion;
 
-    console.log(`✅ Documento DTE construido: ${codigoGeneracion}`);
-
-    // Firmar documento
+    // Paso 1: Firmar
     console.log('🔏 Enviando a firmar...');
     const resultadoFirma = await signerService.firmarDocumento({
         documento: documentoDTE,
@@ -89,13 +77,13 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
     if (!resultadoFirma.exito) {
         return {
             exito: false,
+            paso: 'FIRMA',
             error: 'Error al firmar documento',
             detalle: resultadoFirma.error,
-            documento: documentoDTE,
         };
     }
 
-    // Enviar a Hacienda
+    // Paso 2: Enviar a Hacienda
     console.log('📤 Transmitiendo a Hacienda...');
     const resultadoMH = await mhService.enviarDTE({
         documentoFirmado: resultadoFirma.firma,
@@ -111,6 +99,7 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
 
     return {
         exito: resultadoMH.exito,
+        paso: resultadoMH.exito ? 'PROCESADO' : 'RECHAZADO',
         datos: resultadoMH.exito ? {
             codigoGeneracion,
             numeroControl,
@@ -120,48 +109,39 @@ const procesarFactura = async ({ datos, emisor, tenantId }) => {
         } : null,
         error: resultadoMH.exito ? null : resultadoMH.error,
         observaciones: resultadoMH.observaciones,
-        documento: documentoDTE,
         documentoFirmado: resultadoFirma.firma,
+    };
+};
+
+/**
+ * Flujo completo legacy (usado por transmitirDirecto y scripts)
+ * NOTA: Para nuevos flujos usar construirDocumento + firmarYEnviar
+ */
+const procesarFactura = async ({ datos, emisor, tenantId }) => {
+    const documentoDTE = construirDocumento({ datos, emisor, tenantId });
+    const tipoDte = datos.tipoDte || '01';
+
+    const resultado = await firmarYEnviar({ documentoDTE, emisor, tipoDte });
+
+    return {
+        ...resultado,
+        documento: documentoDTE,
         tenantId,
         emisorId: emisor.id,
     };
 };
 
 /**
- * Formatea los datos del emisor para el documento DTE
+ * Transmisión directa de un documento DTE ya construido
  */
 const transmitirDirecto = async ({ documentoDTE, emisor }) => {
     const tipoDte = documentoDTE.identificacion.tipoDte || '01';
-    const codigoGeneracion = documentoDTE.identificacion.codigoGeneracion;
-    const version = documentoDTE.identificacion.version || 1;
-    const ambiente = documentoDTE.identificacion.ambiente || emisor.ambiente;
-
-    const resultadoFirma = await signerService.firmarDocumento({
-        documento: documentoDTE,
-        nit: emisor.nit,
-        clavePrivada: emisor.mhClavePrivada,
-    });
-
-    if (!resultadoFirma.exito) {
-        return { exito: false, error: resultadoFirma.error };
-    }
-
-    const resultadoMH = await mhService.enviarDTE({
-        documentoFirmado: resultadoFirma.firma,
-        ambiente,
-        tipoDte,
-        version,
-        codigoGeneracion,
-        credenciales: {
-            nit: emisor.nit,
-            claveApi: emisor.mhClaveApi,
-        },
-    });
-
-    return { ...resultadoMH, documentoFirmado: resultadoFirma.firma };
+    return await firmarYEnviar({ documentoDTE, emisor, tipoDte });
 };
 
 module.exports = {
+    construirDocumento,
+    firmarYEnviar,
     procesarFactura,
     transmitirDirecto,
 };

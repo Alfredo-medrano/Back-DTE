@@ -11,8 +11,8 @@ const { dteOrchestrator, signer, mhSender } = require('../services');
 const { dteRepository } = require('../repositories');
 const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { tenantService } = require('../../iam');
-const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
+const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 
 /**
  * Crear una nueva factura electrónica (flujo completo MULTI-TENANT)
@@ -20,8 +20,11 @@ const { calcularLineaProducto, calcularResumenFactura } = require('../services/d
  * Requiere: tenantContext middleware
  */
 const crearFactura = async (req, res, next) => {
+    let dteId = null; // Para tracking en caso de error parcial
+
     try {
-        const { receptor, items, tipoDte, condicionOperacion } = req.body;
+        const { receptor, items, condicionOperacion, documentoRelacionado } = req.body;
+        const tipoDte = req.body.tipoDte || '01';
         const { tenant, emisor } = req;
 
         // Validación de entrada
@@ -29,62 +32,104 @@ const crearFactura = async (req, res, next) => {
             throw new BadRequestError('Datos incompletos: receptor e items son requeridos', 'DATOS_INCOMPLETOS');
         }
 
-        console.log(`📄 [${tenant.nombre}] Creando factura ${tipoDte || '01'}...`);
+        // NC (DTE-05) requiere documentoRelacionado obligatoriamente
+        if (tipoDte === '05' && !documentoRelacionado) {
+            throw new BadRequestError(
+                'documentoRelacionado es obligatorio para Nota de Crédito (DTE-05)',
+                'DOCUMENTO_RELACIONADO_REQUERIDO'
+            );
+        }
+
+        console.log(`📄 [${tenant.nombre}] Creando factura ${tipoDte}...`);
 
         // Obtener credenciales desencriptadas del emisor
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
         // Obtener siguiente correlativo
-        const correlativo = await tenantService.obtenerSiguienteCorrelativo(emisor.id, tipoDte || '01');
+        const correlativo = await tenantService.obtenerSiguienteCorrelativo(emisor.id, tipoDte);
 
-        // Procesar factura con contexto completo
-        const resultado = await dteOrchestrator.procesarFactura({
+        // ═══════════════════════════════════════
+        // PASO 1: Construir documento DTE
+        // ═══════════════════════════════════════
+        const documentoDTE = dteOrchestrator.construirDocumento({
             datos: {
                 receptor,
                 items,
-                tipoDte: tipoDte || '01',
+                tipoDte,
                 correlativo,
                 condicionOperacion: condicionOperacion || 1,
+                documentoRelacionado: documentoRelacionado || null,
             },
             emisor: emisorConCredenciales,
             tenantId: tenant.id,
         });
 
-        // Persistir en BD (patrón Outbox)
-        if (resultado.exito) {
-            await dteRepository.crear({
-                tenantId: tenant.id,
-                emisorId: emisor.id,
-                codigoGeneracion: resultado.datos.codigoGeneracion,
-                numeroControl: resultado.datos.numeroControl,
-                tipoDte: tipoDte || '01',
-                version: resultado.documento.identificacion.version,
-                ambiente: emisorConCredenciales.ambiente,
-                fechaEmision: resultado.documento.identificacion.fecEmi,
-                horaEmision: resultado.documento.identificacion.horEmi,
-                receptor: {
-                    tipoDocumento: receptor.tipoDocumento || '36',
-                    numDocumento: receptor.numDocumento,
-                    nombre: receptor.nombre,
-                    correo: receptor.correo,
-                },
-                totales: {
-                    totalGravada: resultado.documento.resumen.totalGravada,
-                    totalIva: resultado.documento.resumen.totalIva || 0,
-                    totalPagar: resultado.documento.resumen.totalPagar,
-                },
-                jsonOriginal: resultado.documento,
-            }).then(dte => {
-                // Actualizar a PROCESADO
-                return dteRepository.actualizarEstado(dte.id, {
+        // ═══════════════════════════════════════
+        // PASO 2: Guardar en BD ANTES de enviar (Outbox)
+        // ═══════════════════════════════════════
+        const dteCreado = await dteRepository.crear({
+            tenantId: tenant.id,
+            emisorId: emisor.id,
+            codigoGeneracion: documentoDTE.identificacion.codigoGeneracion,
+            numeroControl: documentoDTE.identificacion.numeroControl,
+            tipoDte,
+            version: documentoDTE.identificacion.version,
+            ambiente: emisorConCredenciales.ambiente,
+            fechaEmision: documentoDTE.identificacion.fecEmi,
+            horaEmision: documentoDTE.identificacion.horEmi,
+            receptor: {
+                tipoDocumento: receptor.tipoDocumento || '36',
+                numDocumento: receptor.numDocumento || receptor.nit,
+                nombre: receptor.nombre,
+                correo: receptor.correo,
+            },
+            totales: {
+                totalGravada: documentoDTE.resumen.totalGravada,
+                totalIva: documentoDTE.resumen.totalIva || 0,
+                totalPagar: documentoDTE.resumen.totalPagar,
+            },
+            jsonOriginal: documentoDTE,
+        });
+
+        dteId = dteCreado.id;
+        console.log(`📝 DTE guardado en BD: ${dteId} [CREADO]`);
+
+        // ═══════════════════════════════════════
+        // PASO 3: Firmar y enviar a Hacienda
+        // ═══════════════════════════════════════
+        const resultado = await dteOrchestrator.firmarYEnviar({
+            documentoDTE,
+            emisor: emisorConCredenciales,
+            tipoDte,
+        });
+
+        // ═══════════════════════════════════════
+        // PASO 4: Actualizar estado en BD
+        // ═══════════════════════════════════════
+        try {
+            if (resultado.exito) {
+                await dteRepository.actualizarEstado(dteId, {
                     status: 'PROCESADO',
                     selloRecibido: resultado.datos.selloRecibido,
                     fechaProcesamiento: resultado.datos.fechaProcesamiento,
                     jsonFirmado: resultado.documentoFirmado,
                 });
-            });
+            } else {
+                await dteRepository.actualizarEstado(dteId, {
+                    status: 'RECHAZADO',
+                    observaciones: JSON.stringify(resultado.observaciones),
+                    errorLog: JSON.stringify(resultado.error),
+                });
+            }
+        } catch (dbError) {
+            // CRÍTICO: Hacienda ya procesó pero no pudimos guardar el resultado
+            // El DTE queda en estado CREADO para reconciliación manual
+            console.error(`🚨 [CRITICAL] DTE ${dteId} procesado por Hacienda pero falló actualización BD:`, dbError.message);
+            console.error(`   Sello: ${resultado.datos?.selloRecibido || 'N/A'}`);
+            // NO lanzar error al cliente — el DTE SÍ fue procesado
         }
 
+        // Responder al cliente
         if (resultado.exito) {
             res.json({
                 exito: true,
@@ -100,6 +145,18 @@ const crearFactura = async (req, res, next) => {
             });
         }
     } catch (error) {
+        // Si ya guardamos en BD, marcar como ERROR
+        if (dteId) {
+            try {
+                await dteRepository.actualizarEstado(dteId, {
+                    status: 'ERROR',
+                    errorLog: error.message,
+                });
+            } catch (dbError) {
+                console.error(`🚨 No se pudo actualizar DTE ${dteId} a ERROR:`, dbError.message);
+            }
+        }
+
         console.error('❌ Error en crearFactura:', error);
         console.error('Stack:', error.stack);
         next(error);

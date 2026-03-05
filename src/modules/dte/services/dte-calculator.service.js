@@ -15,8 +15,6 @@ const {
     IVA_RATE,
 } = require('../constants');
 
-const TASA_IVA = IVA_RATE; // 13%
-
 /**
  * Redondea a N decimales (regla fiscal)
  * @param {number} valor - Valor a redondear
@@ -54,7 +52,7 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     if (precioIncluyeIva) {
         precioUni = precioUnitario;
         ventaGravada = redondear(montoNeto, 2);
-        ivaItem = redondear(montoNeto / (1 + TASA_IVA) * TASA_IVA, 2);
+        ivaItem = redondear(montoNeto / (1 + IVA_RATE) * IVA_RATE, 2);
     } else if (tipoDte === '14' || tipoDte === '11') {
         precioUni = precioUnitario;
         ventaGravada = redondear(montoNeto, 2);
@@ -62,7 +60,7 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     } else {
         precioUni = precioUnitario;
         ventaGravada = redondear(montoNeto, 2);
-        ivaItem = redondear(montoNeto * TASA_IVA, 2);
+        ivaItem = redondear(montoNeto * IVA_RATE, 2);
     }
 
     let uniMedida = 59;
@@ -73,7 +71,10 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
 
     const tributos = usaTributos ? generarTributosCuerpo(tipoDte) : null;
 
-    return {
+    // Tipos de DTE donde Hacienda PROHÍBE ivaItem en el detalle
+    const sinIvaItem = ['03', '05', '06'].includes(tipoDte);
+
+    const linea = {
         numItem,
         tipoItem,
         numeroDocumento: null,
@@ -90,8 +91,14 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         tributos,
         psv: 0.00,
         noGravado: 0.00,
-        ivaItem,
     };
+
+    // Solo incluir ivaItem en tipos que lo permiten (FE-01, etc.)
+    if (!sinIvaItem) {
+        linea.ivaItem = ivaItem;
+    }
+
+    return linea;
 };
 
 /**
@@ -120,7 +127,14 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     totalExenta = redondear(totalExenta);
     totalGravada = redondear(totalGravada);
     totalDescuento = redondear(totalDescuento);
-    totalIva = redondear(totalIva);
+
+    // Para DTE con tributos (03, 05, 06) el IVA no viene por línea (ivaItem prohibido),
+    // se calcula sobre el totalGravada
+    if (usaTributos && totalIva === 0) {
+        totalIva = redondear(totalGravada * IVA_RATE);
+    } else {
+        totalIva = redondear(totalIva);
+    }
 
     const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
     const subTotal = subTotalVentas;
@@ -224,7 +238,7 @@ function numeroALetras(numero) {
 }
 
 module.exports = {
-    TASA_IVA,
+    TASA_IVA: IVA_RATE,
     redondear,
     calcularLineaProducto,
     calcularResumenFactura,

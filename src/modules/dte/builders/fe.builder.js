@@ -6,9 +6,7 @@
  * Construye documento FE según Anexo II MH
  */
 
-const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
-const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
-const { obtenerConfigDTE } = require('../constants');
+const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
 
 /**
  * Construye un documento Factura Electrónica completo
@@ -16,63 +14,16 @@ const { obtenerConfigDTE } = require('../constants');
  */
 const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1 }) => {
     const tipoDte = '01';
-    const configDte = obtenerConfigDTE(tipoDte);
 
-    // Identificadores
-    const codigoGeneracion = generarCodigoGeneracion();
-    const codigoEstablecimiento = (emisor.codEstableMH || 'M001') + (emisor.codPuntoVentaMH || 'P001');
-    const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
-    const fechaEmision = generarFechaActual();
-    const horaEmision = generarHoraEmision();
+    const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
+    const emisorDTE = construirEmisor(emisor);
+    const cuerpoDocumento = procesarItems(items, tipoDte);
+    const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte);
 
-    // NIT para Hacienda (últimos 9 dígitos)
-    const nitHacienda = emisor.nit.slice(-9);
-
-    // Procesar items
-    const cuerpoDocumento = items.map((item, index) => {
-        return calcularLineaProducto(item, index + 1, tipoDte);
-    });
-
-    // Calcular resumen
-    const resumen = calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte);
-
-    // Construir documento completo
     return {
-        identificacion: {
-            version: configDte.version,
-            ambiente: emisor.ambiente || '00',
-            tipoDte,
-            numeroControl,
-            codigoGeneracion,
-            tipoModelo: 1,
-            tipoOperacion: 1,
-            tipoContingencia: null,
-            motivoContin: null,
-            fecEmi: fechaEmision,
-            horEmi: horaEmision,
-            tipoMoneda: 'USD',
-        },
+        identificacion,
         documentoRelacionado: null,
-        emisor: {
-            nit: nitHacienda,
-            nrc: emisor.nrc,
-            nombre: (emisor.nombre || '').toUpperCase(),
-            codActividad: emisor.codActividad,
-            descActividad: (emisor.descActividad || '').toUpperCase(),
-            nombreComercial: emisor.nombreComercial?.toUpperCase() || null,
-            tipoEstablecimiento: emisor.tipoEstablecimiento || '01',
-            direccion: {
-                departamento: emisor.departamento || '06',
-                municipio: emisor.municipio || '14',
-                complemento: (emisor.complemento || '').toUpperCase(),
-            },
-            telefono: emisor.telefono,
-            correo: emisor.correo,
-            codEstableMH: emisor.codEstableMH || 'M001',
-            codEstable: emisor.codEstableMH || 'M001',
-            codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
-            codPuntoVenta: emisor.codPuntoVentaMH || 'P001',
-        },
+        emisor: emisorDTE,
         receptor: {
             tipoDocumento: receptor.tipoDocumento || '36',
             numDocumento: receptor.numDocumento,
