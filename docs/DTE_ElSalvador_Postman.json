@@ -1,8 +1,8 @@
 {
     "info": {
-        "_postman_id": "dte-el-salvador-v2",
-        "name": "DTE El Salvador - API v2",
-        "description": "Colección completa para probar el Middleware de Facturación Electrónica Multi-Tenant",
+        "_postman_id": "dte-el-salvador-v3",
+        "name": "DTE El Salvador - API v3 (Completo)",
+        "description": "Colección completa para el Middleware de Facturación Electrónica Multi-Tenant SaaS.\n\n📌 Variables a configurar:\n  - base_url: http://localhost:3000\n  - api_key: tu sk_test_xxx\n  - emisor_id: UUID del emisor\n  - admin_key: tu ADMIN_SECRET_KEY del .env\n  - codigo_generacion: UUID de un DTE PROCESADO (para anular)",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "variable": [
@@ -13,12 +13,27 @@
         },
         {
             "key": "api_key",
-            "value": "sk_test_2a3f0e5ab6a40b703735ed625369a4ec1960a8c1eee41970",
+            "value": "sk_test_REEMPLAZAR_CON_TU_API_KEY",
             "type": "string"
         },
         {
             "key": "emisor_id",
-            "value": "b7c1bae9-f393-4fd3-a79f-4b14bef8aa77",
+            "value": "REEMPLAZAR_CON_UUID_EMISOR",
+            "type": "string"
+        },
+        {
+            "key": "admin_key",
+            "value": "REEMPLAZAR_CON_ADMIN_SECRET_KEY",
+            "type": "string"
+        },
+        {
+            "key": "tenant_id",
+            "value": "REEMPLAZAR_DESPUES_DE_CREAR_TENANT",
+            "type": "string"
+        },
+        {
+            "key": "codigo_generacion",
+            "value": "REEMPLAZAR_CON_UUID_DTE_PROCESADO",
             "type": "string"
         }
     ],
@@ -27,25 +42,24 @@
             "name": "📋 Públicos",
             "item": [
                 {
-                    "name": "1. Health Check (Legacy)",
+                    "name": "1. Health Check BD (Prisma)",
                     "request": {
                         "method": "GET",
                         "header": [],
                         "url": {
-                            "raw": "{{base_url}}/api/status",
+                            "raw": "{{base_url}}/health",
                             "host": [
                                 "{{base_url}}"
                             ],
                             "path": [
-                                "api",
-                                "status"
+                                "health"
                             ]
                         },
-                        "description": "Health check básico del servidor"
+                        "description": "Verifica conectividad con la base de datos usando prisma.$queryRaw SELECT 1. Devuelve 200 OK o 503 si la BD está caída."
                     }
                 },
                 {
-                    "name": "2. Estado del Sistema",
+                    "name": "2. Estado del Sistema (Docker + Hacienda)",
                     "request": {
                         "method": "GET",
                         "header": [],
@@ -60,11 +74,11 @@
                                 "status"
                             ]
                         },
-                        "description": "Estado completo: servidor, Docker, Hacienda"
+                        "description": "Estado completo: servidor, Docker Firmador y API Hacienda."
                     }
                 },
                 {
-                    "name": "3. Documento de Ejemplo",
+                    "name": "3. Documento de Ejemplo (Anexo II)",
                     "request": {
                         "method": "GET",
                         "header": [],
@@ -79,16 +93,288 @@
                                 "ejemplo"
                             ]
                         },
-                        "description": "Genera estructura JSON según Anexo II"
+                        "description": "Genera estructura JSON de referencia según Anexo II MH."
+                    }
+                },
+                {
+                    "name": "4. Info API + Endpoints",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                ""
+                            ]
+                        },
+                        "description": "Retorna el mapa de todos los endpoints disponibles."
                     }
                 }
             ]
         },
         {
-            "name": "🔐 Protegidos v2",
+            "name": "🔑 Admin IAM (X-Admin-Key)",
+            "description": "Gestión de Tenants, Emisores y API Keys.\nRequiere header: X-Admin-Key con el valor de ADMIN_SECRET_KEY del .env\n\n⚠️ Flujo recomendado:\n  1. Crear Tenant\n  2. Copiar tenant_id → variable tenant_id\n  3. Crear Emisor para ese Tenant\n  4. Crear API Key → copiar la key a api_key\n  5. Usar api_key en las carpetas DTE",
             "item": [
                 {
-                    "name": "4. Test Autenticación Hacienda",
+                    "name": "A1. Crear Tenant",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.exito && r.datos && r.datos.id) {",
+                                    "    pm.collectionVariables.set('tenant_id', r.datos.id);",
+                                    "    console.log('✅ tenant_id guardado:', r.datos.id);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"nombre\": \"Empresa Demo SA de CV\",\n  \"email\": \"admin@empresa-demo.com\",\n  \"telefono\": \"22001234\",\n  \"plan\": \"PROFESIONAL\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants"
+                            ]
+                        },
+                        "description": "Crea un nuevo cliente SaaS. El test script guarda {{tenant_id}} automáticamente."
+                    }
+                },
+                {
+                    "name": "A2. Listar Tenants",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants"
+                            ]
+                        },
+                        "description": "Lista todos los tenants activos con conteos de emisores, API Keys y DTEs."
+                    }
+                },
+                {
+                    "name": "A3. Obtener Tenant por ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants/{{tenant_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants",
+                                "{{tenant_id}}"
+                            ]
+                        },
+                        "description": "Retorna el tenant con sus emisores activos incluidos."
+                    }
+                },
+                {
+                    "name": "A4. Crear Emisor para Tenant",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.exito && r.datos && r.datos.id) {",
+                                    "    pm.collectionVariables.set('emisor_id', r.datos.id);",
+                                    "    console.log('✅ emisor_id guardado:', r.datos.id);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"nit\": \"070048272\",\n  \"nrc\": \"3799647\",\n  \"nombre\": \"ALFREDO EZEQUIEL MEDRANO MARTINEZ\",\n  \"codActividad\": \"62010\",\n  \"descActividad\": \"ACTIVIDADES DE PROGRAMACION INFORMATICA\",\n  \"complemento\": \"COLONIA CENTROAMERICA, SAN SALVADOR\",\n  \"telefono\": \"22001234\",\n  \"correo\": \"facturacion@empresa.com\",\n  \"mhClaveApi\": \"TU_CLAVE_API_MH\",\n  \"mhClavePrivada\": \"TU_CLAVE_PRIVADA_MH\",\n  \"ambiente\": \"00\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants/{{tenant_id}}/emisores",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants",
+                                "{{tenant_id}}",
+                                "emisores"
+                            ]
+                        },
+                        "description": "Crea un emisor. Las credenciales MH se almacenan encriptadas (AES-256-CBC). El test script guarda {{emisor_id}} automáticamente."
+                    }
+                },
+                {
+                    "name": "A5. Crear API Key",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.exito && r.datos && r.datos.apiKey) {",
+                                    "    pm.collectionVariables.set('api_key', r.datos.apiKey);",
+                                    "    console.log('✅ api_key guardada:', r.datos.apiKey);",
+                                    "    console.log('⚠️ Guárdala — no se mostrará de nuevo');",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"nombre\": \"API Key Producción\",\n  \"ambiente\": \"00\",\n  \"permisos\": [\"dte:create\", \"dte:read\"],\n  \"rateLimit\": 100\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants/{{tenant_id}}/api-keys",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants",
+                                "{{tenant_id}}",
+                                "api-keys"
+                            ]
+                        },
+                        "description": "Genera una API Key. ⚠️ Solo se muestra UNA VEZ. El test script la guarda en {{api_key}} automáticamente."
+                    }
+                },
+                {
+                    "name": "A6. Listar API Keys del Tenant",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "X-Admin-Key",
+                                "value": "{{admin_key}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants/{{tenant_id}}/api-keys",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants",
+                                "{{tenant_id}}",
+                                "api-keys"
+                            ]
+                        },
+                        "description": "Lista API Keys sin mostrar la key real (solo metadata)."
+                    }
+                },
+                {
+                    "name": "A7. [SEGURIDAD] Sin Admin Key → debe dar 401",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants"
+                            ]
+                        },
+                        "description": "Sin X-Admin-Key → 401. Verifica que el panel no es público."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔐 DTE v2 — Facturación",
+            "description": "Endpoints de facturación. Requieren:\n  - Authorization: Bearer {{api_key}}\n  - X-Emisor-Id: {{emisor_id}}",
+            "item": [
+                {
+                    "name": "5. Test Autenticación Hacienda",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -113,11 +399,11 @@
                                 "test-auth"
                             ]
                         },
-                        "description": "Prueba autenticación con Hacienda usando credenciales del emisor"
+                        "description": "Prueba autenticación con Hacienda usando credenciales del emisor."
                     }
                 },
                 {
-                    "name": "5. Test Firma Docker",
+                    "name": "6. Test Firma Docker",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -136,7 +422,12 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"test\": \"documento de prueba\",\n  \"datos\": {\n    \"valor\": 123\n  }\n}"
+                            "raw": "{\n  \"test\": \"documento de prueba\",\n  \"datos\": { \"valor\": 123 }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         },
                         "url": {
                             "raw": "{{base_url}}/api/dte/v2/test-firma",
@@ -150,11 +441,26 @@
                                 "test-firma"
                             ]
                         },
-                        "description": "Prueba firma con Docker Firmador"
+                        "description": "Prueba que el Docker Firmador responde y firma correctamente."
                     }
                 },
                 {
-                    "name": "6. Crear Factura (DTE-01) ⭐",
+                    "name": "7. Crear Factura (DTE-01) ⭐",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.exito && r.datos && r.datos.codigoGeneracion) {",
+                                    "    pm.collectionVariables.set('codigo_generacion', r.datos.codigoGeneracion);",
+                                    "    console.log('✅ codigo_generacion guardado:', r.datos.codigoGeneracion);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "POST",
                         "header": [
@@ -173,7 +479,12 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"tipoDte\": \"01\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE DE PRUEBA SA DE CV\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"COLONIA ESCALÓN, CALLE EJEMPLO #123\"\n    },\n    \"telefono\": \"22223333\",\n    \"correo\": \"cliente@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"SERVICIO DE CONSULTORIA\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 100.00,\n      \"tipoItem\": 2\n    },\n    {\n      \"descripcion\": \"PRODUCTO EJEMPLO\",\n      \"cantidad\": 2,\n      \"precioUnitario\": 25.50,\n      \"codigo\": \"PROD001\",\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 1\n}"
+                            "raw": "{\n  \"tipoDte\": \"01\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE DE PRUEBA SA DE CV\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"COLONIA ESCALÓN, CALLE EJEMPLO #123\"\n    },\n    \"telefono\": \"22223333\",\n    \"correo\": \"cliente@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"SERVICIO DE CONSULTORÍA\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 100.00,\n      \"tipoItem\": 2\n    },\n    {\n      \"descripcion\": \"PRODUCTO EJEMPLO\",\n      \"cantidad\": 2,\n      \"precioUnitario\": 25.50,\n      \"codigo\": \"PROD001\",\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 1\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         },
                         "url": {
                             "raw": "{{base_url}}/api/dte/v2/facturar",
@@ -187,11 +498,11 @@
                                 "facturar"
                             ]
                         },
-                        "description": "Crear Factura Electrónica consumidor final"
+                        "description": "Factura Electrónica a consumidor final. El test script guarda {{codigo_generacion}} para las consultas y anulación."
                     }
                 },
                 {
-                    "name": "7. Crear Crédito Fiscal (DTE-03)",
+                    "name": "8. Crear Crédito Fiscal (DTE-03)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -210,7 +521,12 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"tipoDte\": \"03\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06140101941234\",\n    \"nrc\": \"1234567\",\n    \"nombre\": \"EMPRESA CONTRIBUYENTE SA DE CV\",\n    \"codActividad\": \"46900\",\n    \"descActividad\": \"VENTA AL POR MAYOR\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"ZONA INDUSTRIAL\"\n    },\n    \"telefono\": \"22224444\",\n    \"correo\": \"empresa@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"INSUMOS INDUSTRIALES\",\n      \"cantidad\": 10,\n      \"precioUnitario\": 50.00,\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 2\n}"
+                            "raw": "{\n  \"tipoDte\": \"03\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06140101941234\",\n    \"nit\": \"06140101941234\",\n    \"nrc\": \"1234567\",\n    \"nombre\": \"EMPRESA CONTRIBUYENTE SA DE CV\",\n    \"codActividad\": \"46900\",\n    \"descActividad\": \"VENTA AL POR MAYOR\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"14\",\n      \"complemento\": \"ZONA INDUSTRIAL, BODEGA 5\"\n    },\n    \"telefono\": \"22224444\",\n    \"correo\": \"empresa@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"INSUMOS INDUSTRIALES\",\n      \"cantidad\": 10,\n      \"precioUnitario\": 50.00,\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 2\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         },
                         "url": {
                             "raw": "{{base_url}}/api/dte/v2/facturar",
@@ -224,11 +540,137 @@
                                 "facturar"
                             ]
                         },
-                        "description": "Crear Crédito Fiscal para contribuyentes"
+                        "description": "Crédito Fiscal para contribuyentes con IVA separado. Requiere NIT y NRC del receptor."
                     }
                 },
                 {
-                    "name": "8. Listar Facturas",
+                    "name": "9. Crear Nota de Crédito (DTE-05)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"05\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE DE PRUEBA SA DE CV\",\n    \"correo\": \"cliente@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"AJUSTE POR DESCUENTO - FACTURA X\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 50.00,\n      \"tipoItem\": 2\n    }\n  ],\n  \"condicionOperacion\": 1,\n  \"documentoRelacionado\": {\n    \"tipoDocumento\": \"01\",\n    \"tipoGeneracion\": 1,\n    \"numeroDocumento\": \"{{codigo_generacion}}\",\n    \"fechaEmision\": \"2026-03-01\"\n  }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "Nota de Crédito para ajustar/anular parcialmente una FE o CCF. REQUIERE documentoRelacionado."
+                    }
+                },
+                {
+                    "name": "10. Crear Nota de Débito (DTE-06) 🆕",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"06\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE DE PRUEBA SA DE CV\",\n    \"correo\": \"cliente@ejemplo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"CARGO ADICIONAL POR MODIFICACIÓN DE SERVICIO\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 25.00,\n      \"tipoItem\": 2\n    }\n  ],\n  \"condicionOperacion\": 1,\n  \"documentoRelacionado\": {\n    \"tipoDocumento\": \"01\",\n    \"tipoGeneracion\": 1,\n    \"numeroDocumento\": \"{{codigo_generacion}}\",\n    \"fechaEmision\": \"2026-03-01\"\n  },\n  \"motivoAjuste\": \"Cargo adicional por modificación de condiciones del servicio original\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "🆕 NUEVO — Nota de Débito para cargos adicionales sobre una FE o CCF ya emitida. REQUIERE documentoRelacionado y motivoAjuste."
+                    }
+                },
+                {
+                    "name": "11. Crear Factura Sujeto Excluido (DTE-14) 🆕",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"14\",\n  \"receptor\": {\n    \"tipoDocumento\": \"13\",\n    \"numDocumento\": \"01234567-8\",\n    \"nombre\": \"MARIA JOSEFA LOPEZ GARCIA\",\n    \"direccion\": {\n      \"departamento\": \"06\",\n      \"municipio\": \"01\",\n      \"complemento\": \"COLONIA LAS FLORES, CASA #12\"\n    },\n    \"telefono\": \"77001234\",\n    \"correo\": \"maria@correo.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"SERVICIO DE LIMPIEZA\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 80.00,\n      \"tipoItem\": 4\n    }\n  ],\n  \"condicionOperacion\": 1\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "🆕 NUEVO — Factura a Sujeto Excluido (persona natural NO contribuyente del IVA). El receptor usa DUI (tipoDocumento=13) en lugar de NIT."
+                    }
+                },
+                {
+                    "name": "12. Listar Facturas (con filtros)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -270,14 +712,24 @@
                                     "key": "status",
                                     "value": "PROCESADO",
                                     "disabled": true
+                                },
+                                {
+                                    "key": "fechaDesde",
+                                    "value": "2026-03-01",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "fechaHasta",
+                                    "value": "2026-03-31",
+                                    "disabled": true
                                 }
                             ]
                         },
-                        "description": "Lista DTEs del tenant con paginación y filtros"
+                        "description": "Lista DTEs del tenant. Desactiva los query params opcionales según necesidad."
                     }
                 },
                 {
-                    "name": "9. Consultar Factura por Código",
+                    "name": "13. Consultar Factura por Código",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -291,7 +743,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/dte/v2/factura/CODIGO-DE-GENERACION-AQUI",
+                            "raw": "{{base_url}}/api/dte/v2/factura/{{codigo_generacion}}",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -300,14 +752,14 @@
                                 "dte",
                                 "v2",
                                 "factura",
-                                "CODIGO-DE-GENERACION-AQUI"
+                                "{{codigo_generacion}}"
                             ]
                         },
-                        "description": "Consulta estado de un DTE específico (reemplazar CODIGO-DE-GENERACION-AQUI)"
+                        "description": "Consulta estado completo de un DTE. Usa {{codigo_generacion}} guardado por el test script de Crear Factura."
                     }
                 },
                 {
-                    "name": "10. Estadísticas del Tenant",
+                    "name": "14. Estadísticas del Tenant",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -338,30 +790,44 @@
                                 }
                             ]
                         },
-                        "description": "Estadísticas de facturación del tenant"
+                        "description": "Estadísticas agrupadas por status y tipoDte para el período. Valores: dia | semana | mes."
                     }
                 }
             ]
         },
         {
-            "name": "🛡️ Tests de Seguridad",
+            "name": "🚫 Anulación de DTE 🆕",
+            "description": "Para anular un DTE debe estar en estado PROCESADO.\nUsa {{codigo_generacion}} guardado automáticamente al crear una factura.",
             "item": [
                 {
-                    "name": "Test Rate Limiting (Tenant B)",
+                    "name": "15. Anular DTE 🆕",
                     "request": {
-                        "method": "GET",
+                        "method": "POST",
                         "header": [
                             {
                                 "key": "Authorization",
-                                "value": "Bearer sk_test_5b8fc08b4688f0ff49f088e68c4558ccc0eade2dc0eba3eb"
+                                "value": "Bearer {{api_key}}"
                             },
                             {
                                 "key": "X-Emisor-Id",
-                                "value": "c9a17b77-72e1-4c29-9048-6b15b8c294cd"
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
                             }
                         ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"motivoAnulacion\": \"Error en datos del receptor, se emitirá documento nuevo correcto\",\n  \"nombreResponsable\": \"ALFREDO MEDRANO\",\n  \"tipoResponsable\": \"36\",\n  \"numDocResponsable\": \"070048272\",\n  \"nombreSolicita\": \"GERENTE ADMINISTRATIVO\",\n  \"tipoSolicita\": \"36\",\n  \"numDocSolicita\": \"070048272\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
                         "url": {
-                            "raw": "{{base_url}}/api/dte/v2/test-auth",
+                            "raw": "{{base_url}}/api/dte/v2/factura/{{codigo_generacion}}/anular",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -369,14 +835,65 @@
                                 "api",
                                 "dte",
                                 "v2",
-                                "test-auth"
+                                "factura",
+                                "{{codigo_generacion}}",
+                                "anular"
                             ]
                         },
-                        "description": "Ejecutar 6+ veces rápido → debe recibir 429"
+                        "description": "🆕 NUEVO — Anula un DTE ya procesado por Hacienda. Solo funciona si el DTE está en estado PROCESADO. Actualiza localmente a ANULADO si Hacienda acepta."
                     }
                 },
                 {
-                    "name": "Test Sin API Key",
+                    "name": "15b. [ERROR] Anular DTE no PROCESADO → debe dar 400",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"motivoAnulacion\": \"Intento de anular DTE en estado incorrecto\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/factura/UUID-QUE-NO-EXISTE/anular",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "factura",
+                                "UUID-QUE-NO-EXISTE",
+                                "anular"
+                            ]
+                        },
+                        "description": "Reemplaza el UUID con uno de un DTE en estado ERROR o CREADO → debe devolver 400 ESTADO_INVALIDO o 404 NOT FOUND."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🛡️ Tests de Seguridad y Límites",
+            "item": [
+                {
+                    "name": "16. Sin API Key → debe dar 401",
                     "request": {
                         "method": "GET",
                         "header": [],
@@ -392,7 +909,125 @@
                                 "facturas"
                             ]
                         },
-                        "description": "Sin Authorization header → debe recibir 401"
+                        "description": "Sin Authorization header → debe devolver HTTP 401."
+                    }
+                },
+                {
+                    "name": "17. API Key inválida → debe dar 401",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer sk_test_FALSA_123"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturas",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturas"
+                            ]
+                        },
+                        "description": "API Key inventada → debe devolver HTTP 401."
+                    }
+                },
+                {
+                    "name": "18. Rate Limiting → ejecuta 6+ veces para ver 429",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/test-auth",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "test-auth"
+                            ]
+                        },
+                        "description": "Ejecutar 6+ veces en menos de 1 minuto → la 6ta debe recibir HTTP 429 Too Many Requests."
+                    }
+                },
+                {
+                    "name": "19. [PLAN] Verificar límite mensual (402)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"01\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"TEST PLAN LIMIT\"\n  },\n  \"items\": [\n    { \"descripcion\": \"TEST\", \"cantidad\": 1, \"precioUnitario\": 1.00, \"tipoItem\": 2 }\n  ],\n  \"condicionOperacion\": 1\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "🆕 NUEVO — Si el tenant BASICO ya usó sus 100 DTEs del mes, esta petición debe devolver HTTP 402 con código PLAN_LIMIT_REACHED y detalles del plan."
+                    }
+                },
+                {
+                    "name": "20. [SEGURIDAD] Admin sin key → 401",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/admin/tenants",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "tenants"
+                            ]
+                        },
+                        "description": "Acceso al panel admin sin X-Admin-Key → debe devolver 401."
                     }
                 }
             ]
