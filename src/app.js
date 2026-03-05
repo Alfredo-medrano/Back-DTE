@@ -9,9 +9,16 @@
  * Inicia con: npm run dev
  */
 
+require('dotenv').config();
+const { validarEntorno } = require('./config/env-validator');
+
+// Validar entorno ANTES de inicializar cualquier otra cosa
+validarEntorno();
+
 const express = require('express');
 const cors = require('cors');
 const config = require('./config/env');
+const logger = require('./shared/logger');
 
 // Shared Infrastructure
 const { errorHandler, notFoundHandler, requestLogger, rateLimiter } = require('./shared/middleware');
@@ -117,49 +124,39 @@ app.use(errorHandler);
 const PORT = config.port;
 
 const server = app.listen(PORT, () => {
+    logger.info('Server started', {
+        port: PORT,
+        url: `http://localhost:${PORT}`,
+        ambiente: config.emisor.ambiente === '00' ? 'PRUEBAS' : 'PRODUCCIÓN',
+        dockerFirmador: config.docker.url,
+        apiHacienda: config.mh.apiUrl,
+    });
     console.log('');
     console.log('========================================');
     console.log('  MIDDLEWARE FACTURACIÓN ELECTRÓNICA');
     console.log('  El Salvador - DTE SaaS v3.0.0');
     console.log('========================================');
-    console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-    console.log(`📍 URL: http://localhost:${PORT}`);
-    console.log(`🐳 Docker Firmador: ${config.docker.url}`);
-    console.log(`🏛️  API Hacienda: ${config.mh.apiUrl}`);
-    console.log(`🌍 Ambiente: ${config.emisor.ambiente === '00' ? 'PRUEBAS' : 'PRODUCCIÓN'}`);
+    console.log(`🚀 Puerto: ${PORT}  |  Ambiente: ${config.emisor.ambiente === '00' ? 'PRUEBAS' : 'PRODUCCIÓN'}`);
+    console.log(`📡 Endpoints: /api/dte/v2/facturar  |  /admin/tenants  |  /health`);
     console.log('========================================');
-    console.log('');
-    console.log('Endpoints públicos:');
-    console.log('  GET  /api/dte/status       - Estado componentes');
-    console.log('  GET  /api/dte/ejemplo      - Documento ejemplo');
-    console.log('  GET  /health               - Health check BD');
-    console.log('');
-    console.log('Endpoints v2 (requieren API Key):');
-    console.log('  POST /api/dte/v2/facturar      - Crear DTE (FE/CCF/NC)');
-    console.log('  GET  /api/dte/v2/facturas      - Listar DTEs');
-    console.log('  GET  /api/dte/v2/factura/:id   - Consultar DTE');
-    console.log('  GET  /api/dte/v2/estadisticas  - Dashboard');
-    console.log('');
 
     // Iniciar procesador de reintentos en background (cada 5 minutos)
     retryQueue.iniciarProcesadorPeriodico(5);
-    console.log('⏰ Procesador de reintentos iniciado (cada 5 min)');
-    console.log('');
+    logger.info('Retry queue processor started', { intervalMinutes: 5 });
 });
 
 // ========================================
 // GRACEFUL SHUTDOWN
 // ========================================
 const shutdown = async (signal) => {
-    console.log(`\n🛑 [${signal}] Cerrando servidor...`);
+    logger.warn(`Graceful shutdown initiated`, { signal });
     await prisma.$disconnect();
     server.close(() => {
-        console.log('✅ Servidor cerrado correctamente');
+        logger.info('Server closed cleanly');
         process.exit(0);
     });
-    // Forzar cierre si tarda más de 10 segundos
     setTimeout(() => {
-        console.error('⚠️ Cierre forzado por timeout');
+        logger.error('Forced shutdown after timeout');
         process.exit(1);
     }, 10000);
 };

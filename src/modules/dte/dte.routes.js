@@ -18,6 +18,7 @@ const {
     rateLimiter,
     validateDTE
 } = require('../../shared/middleware');
+const { checkPlanLimits } = require('../../modules/billing');
 
 // ========================================
 // RUTAS PÚBLICAS (sin autenticación)
@@ -35,10 +36,11 @@ const v2Router = express.Router();
 v2Router.use(tenantContext);
 v2Router.use(rateLimiter);
 
-// Facturación con validación
+// Facturación con validación + límite de plan
 v2Router.post('/facturar',
     requierePermisos('dte:create'),
-    validateDTE,  // Valida según tipoDte
+    checkPlanLimits,  // 402 si el tenant superó su cuota mensual
+    validateDTE,      // Valida schema según tipoDte
     dteController.crearFactura
 );
 

@@ -1,14 +1,13 @@
 /**
  * ========================================
- * PLACEHOLDER: MÓDULO BILLING
+ * MÓDULO BILLING
  * ========================================
- * Estructura para futuro módulo de Suscripciones
  */
 
-// Placeholder exports
+const { checkPlanLimits, LIMITES, contarDTEsMes } = require('./plan-limits');
+
 module.exports = {
-    // TODO: Implementar
-    // routes: require('./billing.routes'),
-    // controllers: require('./controllers'),
-    // services: require('./services'),
+    checkPlanLimits,
+    LIMITES,
+    contarDTEsMes,
 };
