@@ -18,19 +18,41 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
     const tipoDte = '14';
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
-    const emisorDTE = construirEmisor(emisor);
-    const cuerpoDocumento = procesarItems(items, tipoDte);
+    const emisorDTE = construirEmisor(emisor, tipoDte);
+    const cuerpoDocumento = procesarItems(items, tipoDte).map(item => {
+        // FSE schema prohíbe explícitamente codTributo y numeroDocumento
+        delete item.codTributo;
+        delete item.numeroDocumento;
+        // tipoItem permitido: 1, 2, 3. Si el front envía 4, mapear a 2 (servicios)
+        if (item.tipoItem && ![1, 2, 3].includes(item.tipoItem)) {
+            item.tipoItem = 2;
+        }
+        return item;
+    });
     const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte);
+
+    // FSE exige el array "pagos" en el resumen. Si el front no lo envía, agregamos un default:
+    if (!resumen.pagos) {
+        resumen.pagos = [
+            {
+                codigo: "01", // 01 = Billetes y monedas
+                montoPago: resumen.totalPagar,
+                referencia: null,
+                plazo: null,
+                periodo: null
+            }
+        ];
+    }
 
     return {
         identificacion,
-        documentoRelacionado: null,
         emisor: emisorDTE,
-        // FSE: El receptor es un Sujeto Excluido —
-        // persona natural que no es contribuyente del IVA
-        receptor: {
+        sujetoExcluido: {
             tipoDocumento: receptor.tipoDocumento || '13', // 13 = DUI
-            numDocumento: receptor.numDocumento,
+            // Si es DUI (13), el schema exige exactamente 9 dígitos. Quitamos guiones si los trae.
+            numDocumento: (receptor.tipoDocumento === '13' || !receptor.tipoDocumento)
+                ? (receptor.numDocumento || '').replace(/\D/g, '')
+                : receptor.numDocumento,
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad || null,
             descActividad: receptor.descActividad?.toUpperCase() || null,
@@ -44,7 +66,6 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         },
         cuerpoDocumento,
         resumen,
-        extension: null,
         apendice: null,
     };
 };
