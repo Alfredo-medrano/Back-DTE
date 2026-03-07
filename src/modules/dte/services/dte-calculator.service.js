@@ -73,11 +73,15 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
 
     // Tipos de DTE donde Hacienda PROHÍBE ivaItem en el detalle
     const sinIvaItem = ['03', '05', '06'].includes(tipoDte);
+    // NC/ND (05/06) prohíben psv y noGravado (additionalProperties: false)
+    const sinPsvNoGravado = ['05', '06'].includes(tipoDte);
+    // NC/ND requieren numeroDocumento como string no nulo
+    const numeroDocumento = sinPsvNoGravado ? (item.numeroDocumento || item.codigo || 'S/N') : null;
 
     const linea = {
         numItem,
         tipoItem,
-        numeroDocumento: null,
+        numeroDocumento,
         cantidad: redondear(cantidad, 8),
         codigo: item.codigo || null,
         codTributo: null,
@@ -89,11 +93,15 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         ventaExenta: 0.00,
         ventaGravada,
         tributos,
-        psv: 0.00,
-        noGravado: 0.00,
     };
 
-    // Solo incluir ivaItem en tipos que lo permiten (FE-01, etc.)
+    // psv/noGravado: requeridos en FE-01 y CCF-03, PROHIBIDOS en NC-05 y ND-06
+    if (!sinPsvNoGravado) {
+        linea.psv = 0.00;
+        linea.noGravado = 0.00;
+    }
+
+    // ivaItem: solo en FE-01 (y similares que incluyen precio con IVA)
     if (!sinIvaItem) {
         linea.ivaItem = ivaItem;
     }
@@ -128,7 +136,7 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     totalGravada = redondear(totalGravada);
     totalDescuento = redondear(totalDescuento);
 
-    // Para DTE con tributos (03, 05, 06) el IVA no viene por línea (ivaItem prohibido),
+    // Para DTE con tributos (03, 05, 06) el IVA no viene por línea,
     // se calcula sobre el totalGravada
     if (usaTributos && totalIva === 0) {
         totalIva = redondear(totalGravada * IVA_RATE);
@@ -138,7 +146,44 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
 
     const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
     const subTotal = subTotalVentas;
+    const tributosResumen = usaTributos ? generarTributosResumen(tipoDte, totalIva) : null;
 
+    // ══════════════════════════════════════════════════════════════
+    // NC (05) y ND (06): resumen con estructura propia del schema v3
+    // Campos PROHIBIDOS: pagos, numPagoElectronico, saldoFavor,
+    //                    totalPagar, totalNoGravado, porcentajeDescuento
+    // Campos REQUERIDOS: ivaPerci1, ivaRete1
+    // ══════════════════════════════════════════════════════════════
+    if (tipoDte === '05' || tipoDte === '06') {
+        const montoTotalOperacion = redondear(subTotal + totalIva);
+        const resumenNC = {
+            totalNoSuj,
+            totalExenta,
+            totalGravada,
+            subTotalVentas,
+            descuNoSuj: 0.00,
+            descuExenta: 0.00,
+            descuGravada: totalDescuento,
+            totalDescu: totalDescuento,
+            tributos: tributosResumen,
+            subTotal,
+            ivaPerci1: 0.00,
+            ivaRete1: 0.00,
+            reteRenta: 0.00,
+            montoTotalOperacion,
+            totalLetras: numeroALetras(montoTotalOperacion),
+            condicionOperacion,
+        };
+        // ND requiere numPagoElectronico, NC no
+        if (tipoDte === '06') {
+            resumenNC.numPagoElectronico = null;
+        }
+        return resumenNC;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FE-01 / CCF-03 / FSE-14 / FEX-11: resumen extendido
+    // ══════════════════════════════════════════════════════════════
     let montoTotalOperacion, reteRenta = 0.00;
 
     if (precioIncluyeIva) {
@@ -149,11 +194,11 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     } else if (tipoDte === '11') {
         montoTotalOperacion = subTotal;
     } else {
+        // CCF-03: subTotal + IVA calculado
         montoTotalOperacion = redondear(subTotal + totalIva);
     }
 
     const totalPagar = redondear(montoTotalOperacion);
-    const tributosResumen = usaTributos ? generarTributosResumen(tipoDte, totalIva) : null;
 
     return {
         totalNoSuj,
@@ -167,6 +212,7 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
         totalDescu: totalDescuento,
         tributos: tributosResumen,
         subTotal,
+        ivaPerci1: 0.00,
         ivaRete1: 0.00,
         reteRenta,
         montoTotalOperacion,

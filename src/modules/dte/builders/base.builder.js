@@ -45,13 +45,17 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
 /**
  * Construye el bloque del emisor del DTE
  * @param {object} emisor - Datos del emisor (con credenciales)
+ * @param {string} tipoDte - Tipo de DTE (01, 03, 05, 06, 14...)
  * @returns {object} Bloque emisor según Anexo II
+ *
+ * CCF (03): REQUIERE codEstableMH, codEstable, codPuntoVentaMH, codPuntoVenta
+ * NC (05) / ND (06): PROHÍBE esos campos (additionalProperties: false)
  */
-const construirEmisor = (emisor) => {
-    // NIT para Hacienda (últimos 9 dígitos)
+const construirEmisor = (emisor, tipoDte = '01') => {
+    // NIT para Hacienda: acepta 9 o 14 dígitos
     const nitHacienda = emisor.nit.slice(-9);
 
-    return {
+    const base = {
         nit: nitHacienda,
         nrc: emisor.nrc,
         nombre: (emisor.nombre || '').toUpperCase(),
@@ -66,11 +70,20 @@ const construirEmisor = (emisor) => {
         },
         telefono: emisor.telefono,
         correo: emisor.correo,
-        codEstableMH: emisor.codEstableMH || 'M001',
-        codEstable: emisor.codEstableMH || 'M001',
-        codPuntoVentaMH: emisor.codPuntoVentaMH || 'P001',
-        codPuntoVenta: emisor.codPuntoVentaMH || 'P001',
     };
+
+    // codEstableMH y codPuntoVentaMH: requeridos en CCF-03, prohibidos en NC-05 y ND-06
+    if (tipoDte === '03') {
+        // MH exige exactamente 4 chars para los códigos MH
+        const codMH = (emisor.codEstableMH || 'M001').padStart(4, '0').slice(-4);
+        const codPVMH = (emisor.codPuntoVentaMH || 'P001').padStart(4, '0').slice(-4);
+        base.codEstableMH = codMH;
+        base.codEstable = emisor.codEstableMH || null;
+        base.codPuntoVentaMH = codPVMH;
+        base.codPuntoVenta = emisor.codPuntoVentaMH || null;
+    }
+
+    return base;
 };
 
 /**

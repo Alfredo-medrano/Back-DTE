@@ -17,7 +17,7 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
     const tipoDte = '03';
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
-    const emisorDTE = construirEmisor(emisor);
+    const emisorDTE = construirEmisor(emisor, tipoDte);
     const cuerpoDocumento = procesarItems(items, tipoDte);
     const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte);
 

@@ -1,10 +1,17 @@
 /**
  * ========================================
- * BUILDER: NOTA DE DÉBITO (DTE-06)
+ * BUILDER: NOTA DE DÉBITO (DTE-06) v3
  * Módulo: DTE
  * ========================================
- * Construye documento ND según Anexo II MH
- * REQUIERE: documentoRelacionado obligatorio
+ * Construye documento ND según schema fe-nd-v3.json
+ *
+ * DIFERENCIAS VS CCF/FE:
+ *  - Emisor: SIN codEstableMH, codEstable, codPuntoVentaMH, codPuntoVenta
+ *  - Receptor: usa nit/nrc/codActividad (NO tipoDocumento/numDocumento)
+ *  - cuerpoDocumento: SIN psv, noGravado — CON numeroDocumento (string requerido)
+ *  - resumen: ivaPerci1/ivaRete1, numPagoElectronico (null), SIN totalPagar/pagos/saldoFavor
+ *  - root: SIN otrosDocumentos — CON ventaTercero/extension/apendice (null)
+ *  - documentoRelacionado.tipoDocumento: solo "03" o "07"
  */
 
 const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
@@ -21,27 +28,41 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
     }
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
-    const emisorDTE = construirEmisor(emisor);
+
+    // construirEmisor('06') excluye codEstableMH/codPuntoVentaMH (prohibidos en ND)
+    const emisorDTE = construirEmisor(emisor, tipoDte);
+
     const cuerpoDocumento = procesarItems(items, tipoDte);
+
+    // Para ND, cada ítem necesita numeroDocumento como string válido
+    const numDocRef = documentoRelacionado.numeroDocumento;
+    cuerpoDocumento.forEach(linea => {
+        if (!linea.numeroDocumento || linea.numeroDocumento === 'S/N') {
+            linea.numeroDocumento = numDocRef;
+        }
+    });
+
+    // calcularResumen para '06' devuelve la estructura ND-v3 con numPagoElectronico: null
     const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte);
 
+    // Root ND-v3: SIN otrosDocumentos (prohibited), CON ventaTercero/extension/apendice (null)
     return {
         identificacion,
-        // OBLIGATORIO para ND
         documentoRelacionado: [{
-            tipoDocumento: documentoRelacionado.tipoDocumento,
-            tipoGeneracion: documentoRelacionado.tipoGeneracion || 1,
+            tipoDocumento: documentoRelacionado.tipoDocumento,   // "03" o "07"
+            tipoGeneracion: documentoRelacionado.tipoGeneracion || 2,
             numeroDocumento: documentoRelacionado.numeroDocumento,
             fechaEmision: documentoRelacionado.fechaEmision,
         }],
         emisor: emisorDTE,
         receptor: {
-            tipoDocumento: receptor.tipoDocumento || '36',
-            numDocumento: receptor.numDocumento,
+            // ND receptor: igual que NC — usa nit/nrc, NO tipoDocumento/numDocumento
+            nit: receptor.nit || receptor.numDocumento,
             nrc: receptor.nrc || null,
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad || null,
-            descActividad: receptor.descActividad?.toUpperCase() || null,
+            descActividad: (receptor.descActividad || '').toUpperCase() || null,
+            nombreComercial: receptor.nombreComercial?.toUpperCase() || null,
             direccion: receptor.direccion ? {
                 departamento: receptor.direccion.departamento || '06',
                 municipio: receptor.direccion.municipio || '14',
@@ -50,7 +71,6 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
             telefono: receptor.telefono || null,
             correo: receptor.correo,
         },
-        otrosDocumentos: null,
         ventaTercero: null,
         cuerpoDocumento,
         resumen,

@@ -15,8 +15,8 @@ const {
 } = require('./base.schema');
 
 const documentoRelacionadoNDSchema = z.object({
-    tipoDocumento: z.enum(['01', '03'], {
-        errorMap: () => ({ message: 'ND solo puede relacionarse con FE (01) o CCF (03)' }),
+    tipoDocumento: z.enum(['03', '07'], {
+        errorMap: () => ({ message: 'ND solo puede relacionarse con CCF (03) o Nota de Remisión (07)' }),
     }),
     tipoGeneracion: z.number().int().min(1).max(2),
     numeroDocumento: z.string().min(1, 'Número de documento relacionado requerido'),
@@ -33,8 +33,8 @@ const crearNotaDebitoSchema = z.object({
     condicionOperacion: condicionOperacionSchema,
     documentoRelacionado: documentoRelacionadoNDSchema,
     motivoAjuste: z.string()
-        .min(1, 'Motivo del ajuste es requerido')
-        .max(500, 'Motivo máximo 500 caracteres'),
+        .max(500, 'Motivo máximo 500 caracteres')
+        .optional(),
     observaciones: z.string()
         .max(3000, 'Observaciones máximo 3000 caracteres')
         .optional(),

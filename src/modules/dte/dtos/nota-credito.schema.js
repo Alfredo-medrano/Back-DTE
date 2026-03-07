@@ -18,8 +18,8 @@ const {
  * Documento relacionado OBLIGATORIO para NC
  */
 const documentoRelacionadoNCSchema = z.object({
-    tipoDocumento: z.enum(['01', '03'], {
-        errorMap: () => ({ message: 'NC solo puede relacionarse con FE (01) o CCF (03)' }),
+    tipoDocumento: z.enum(['03', '07'], {
+        errorMap: () => ({ message: 'NC solo puede relacionarse con CCF (03) o Nota de Remisión (07)' }),
     }),
     tipoGeneracion: z.number().int().min(1).max(2),
     numeroDocumento: z.string().min(1, 'Número de documento relacionado requerido'),
