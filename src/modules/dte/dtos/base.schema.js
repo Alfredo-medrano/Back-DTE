@@ -86,12 +86,15 @@ const receptorBaseSchema = z.object({
     numDocumento: z.string().optional(),
     // CCF, NC, ND usan nit
     nit: z.string().optional(),
+    nrc: nrcSchema.nullable().optional(),
     nombre: z.string()
         .min(1, 'Nombre del receptor requerido')
         .max(200, 'Nombre máximo 200 caracteres'),
-    nombreComercial: z.string().optional(),
-    direccion: direccionSchema.optional(),
-    telefono: telefonoSchema.optional(),
+    codActividad: z.string().nullable().optional(),
+    descActividad: z.string().nullable().optional(),
+    nombreComercial: z.string().nullable().optional(),
+    direccion: direccionSchema.nullable().optional(),
+    telefono: telefonoSchema.nullable().optional(),
     correo: emailSchema,
 });
 
