@@ -11,7 +11,7 @@
 
 const express = require('express');
 const router = express.Router();
-const iamController = require('../controllers/iam.controller');
+const iamController = require('./controllers/iam.controller');
 
 // ────────────────────────────────────────────────────────
 // MIDDLEWARE: Guard de Admin Key

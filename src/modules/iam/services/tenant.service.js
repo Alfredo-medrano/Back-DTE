@@ -130,14 +130,44 @@ const crearEmisor = async (tenantId, datosEmisor) => {
  * Obtiene un tenant por ID
  */
 const obtenerPorId = async (tenantId) => {
-    return await prisma.tenant.findUnique({
+    const tenant = await prisma.tenant.findUnique({
         where: { id: tenantId },
         include: {
             emisores: {
                 where: { activo: true },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    nit: true,
+                    nrc: true,
+                    nombre: true,
+                    nombreComercial: true,
+                    codActividad: true,
+                    descActividad: true,
+                    departamento: true,
+                    municipio: true,
+                    complemento: true,
+                    telefono: true,
+                    correo: true,
+                    codEstableMH: true,
+                    codPuntoVentaMH: true,
+                    tipoEstablecimiento: true,
+                    ambiente: true,
+                    activo: true,
+                    correlativoFE: true,
+                    correlativoCCF: true,
+                    correlativoNC: true,
+                    correlativoND: true,
+                    correlativoFSE: true,
+                    correlativoFEX: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    // mhClaveApi y mhClavePrivada NUNCA en respuestas HTTP
+                },
             },
         },
     });
+    return tenant;
 };
 
 /**
