@@ -81,11 +81,15 @@ const tipoDocumentoReceptorSchema = z.enum(['36', '13', '37', '03'], {
 });
 
 const receptorBaseSchema = z.object({
-    tipoDocumento: tipoDocumentoReceptorSchema.default('36'),
-    numDocumento: z.string().min(1, 'Número de documento requerido'),
+    // FE usa tipoDocumento y numDocumento
+    tipoDocumento: tipoDocumentoReceptorSchema.optional(),
+    numDocumento: z.string().optional(),
+    // CCF, NC, ND usan nit
+    nit: z.string().optional(),
     nombre: z.string()
         .min(1, 'Nombre del receptor requerido')
         .max(200, 'Nombre máximo 200 caracteres'),
+    nombreComercial: z.string().optional(),
     direccion: direccionSchema.optional(),
     telefono: telefonoSchema.optional(),
     correo: emailSchema,
