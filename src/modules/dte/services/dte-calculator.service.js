@@ -72,11 +72,11 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const tributos = usaTributos ? generarTributosCuerpo(tipoDte) : null;
 
     // Tipos de DTE donde Hacienda PROHÍBE ivaItem en el detalle
-    const sinIvaItem = ['03', '05', '06'].includes(tipoDte);
-    // NC/ND (05/06) prohíben psv y noGravado (additionalProperties: false)
-    const sinPsvNoGravado = ['05', '06'].includes(tipoDte);
+    const sinIvaItem = ['03', '05', '06', '14'].includes(tipoDte);
+    // NC/ND (05/06) y FSE (14) prohíben psv y noGravado
+    const sinPsvNoGravado = ['05', '06', '14'].includes(tipoDte);
     // NC/ND requieren numeroDocumento como string no nulo
-    const numeroDocumento = sinPsvNoGravado ? (item.numeroDocumento || item.codigo || 'S/N') : null;
+    const numeroDocumento = ['05', '06'].includes(tipoDte) ? (item.numeroDocumento || item.codigo || 'S/N') : null;
 
     const linea = {
         numItem,
@@ -89,11 +89,16 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         descripcion: (item.descripcion || '').toUpperCase(),
         precioUni: redondear(precioUni, 2),
         montoDescu: redondear(descuento, 2),
-        ventaNoSuj: 0.00,
-        ventaExenta: 0.00,
-        ventaGravada,
-        tributos,
     };
+
+    if (tipoDte === '14') {
+        linea.compra = ventaGravada;
+    } else {
+        linea.ventaNoSuj = 0.00;
+        linea.ventaExenta = 0.00;
+        linea.ventaGravada = ventaGravada;
+        linea.tributos = tributos;
+    }
 
     // psv/noGravado: requeridos en FE-01 y CCF-03, PROHIBIDOS en NC-05 y ND-06
     if (!sinPsvNoGravado) {
@@ -124,11 +129,15 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     let totalNoSuj = 0, totalExenta = 0, totalGravada = 0, totalDescuento = 0, totalIva = 0;
 
     lineas.forEach(linea => {
-        totalNoSuj += linea.ventaNoSuj || 0;
-        totalExenta += linea.ventaExenta || 0;
-        totalGravada += linea.ventaGravada || 0;
+        if (tipoDte === '14') {
+            totalGravada += linea.compra || 0;
+        } else {
+            totalNoSuj += linea.ventaNoSuj || 0;
+            totalExenta += linea.ventaExenta || 0;
+            totalGravada += linea.ventaGravada || 0;
+            totalIva += linea.ivaItem || 0;
+        }
         totalDescuento += linea.montoDescu || 0;
-        totalIva += linea.ivaItem || 0;
     });
 
     totalNoSuj = redondear(totalNoSuj);
@@ -179,6 +188,27 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
             resumenNC.numPagoElectronico = null;
         }
         return resumenNC;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FSE (14): resumen con estructura única
+    // ══════════════════════════════════════════════════════════════
+    if (tipoDte === '14') {
+        const reteRenta = redondear(totalGravada * 0.10);
+        const montoTotalOperacion = redondear(subTotal - reteRenta);
+        return {
+            totalCompra: totalGravada,
+            descu: totalDescuento,
+            totalDescu: totalDescuento,
+            subTotal,
+            ivaRete1: 0.00,
+            reteRenta,
+            totalPagar: montoTotalOperacion,
+            totalLetras: numeroALetras(montoTotalOperacion),
+            condicionOperacion,
+            pagos: undefined, // Se omitirá porque la validación puede fallar si mandamos nulo
+            observaciones: null,
+        };
     }
 
     // ══════════════════════════════════════════════════════════════

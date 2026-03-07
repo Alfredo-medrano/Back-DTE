@@ -84,7 +84,7 @@ const crearFactura = async (req, res, next) => {
                 correo: receptor.correo,
             },
             totales: {
-                totalGravada: documentoDTE.resumen.totalGravada,
+                totalGravada: documentoDTE.resumen.totalGravada ?? documentoDTE.resumen.totalCompra ?? 0,
                 totalIva: documentoDTE.resumen.totalIva || 0,
                 totalPagar: documentoDTE.resumen.totalPagar,
             },
