@@ -57,7 +57,7 @@ const validarFacturaFE = (datos) => {
 
     return {
         exito: false,
-        errores: resultado.error.errors.map(e => ({
+        errores: (resultado.error?.issues || []).map(e => ({
             campo: e.path.join('.'),
             mensaje: e.message,
         })),

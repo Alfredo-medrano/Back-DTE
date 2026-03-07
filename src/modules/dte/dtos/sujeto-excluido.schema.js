@@ -44,7 +44,7 @@ const validarFSE = (datos) => {
     if (resultado.success) return { exito: true, datos: resultado.data };
     return {
         exito: false,
-        errores: resultado.error.errors.map(e => ({ campo: e.path.join('.'), mensaje: e.message })),
+        errores: (resultado.error?.issues || []).map(e => ({ campo: e.path.join('.'), mensaje: e.message })),
     };
 };
 

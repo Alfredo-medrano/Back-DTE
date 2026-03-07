@@ -6,7 +6,7 @@
  */
 
 const { validarPorTipo } = require('../../modules/dte/dtos');
-const { BadRequestError } = require('../errors');
+const { BadRequestError, ValidationError } = require('../errors');
 
 /**
  * Middleware de validación con schema Zod
@@ -18,14 +18,13 @@ const validateSchema = (schema) => {
             const resultado = schema.safeParse(req.body);
 
             if (!resultado.success) {
-                const errores = resultado.error.errors.map(e => ({
+                const errores = (resultado.error?.issues || []).map(e => ({
                     campo: e.path.join('.'),
                     mensaje: e.message,
                 }));
 
-                throw new BadRequestError(
+                throw new ValidationError(
                     'Error de validación en los datos enviados',
-                    'VALIDATION_ERROR',
                     errores
                 );
             }
@@ -49,10 +48,10 @@ const validateDTE = (req, res, next) => {
         const resultado = validarPorTipo(tipoDte, req.body);
 
         if (!resultado.exito) {
-            throw new BadRequestError(
+            // resultado.errores might be undefined if the validator threw internally
+            throw new ValidationError(
                 `Error de validación para DTE tipo ${tipoDte}`,
-                'VALIDATION_ERROR',
-                resultado.errores
+                resultado.errores || []
             );
         }
 
