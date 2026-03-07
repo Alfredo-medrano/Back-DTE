@@ -41,12 +41,13 @@ const crearNotaCreditoSchema = z.object({
 
     condicionOperacion: condicionOperacionSchema,
 
-    // OBLIGATORIO para NC
+    // OBLIGATORIO para NC — referencia al DTE que se está ajustando
     documentoRelacionado: documentoRelacionadoNCSchema,
 
-    motivoAnulacion: z.string()
-        .min(1, 'Motivo de anulación/ajuste requerido')
-        .max(500, 'Motivo máximo 500 caracteres'),
+    // Motivo del ajuste (opcional — se mostrará en el documento)
+    motivoAjuste: z.string()
+        .max(500, 'Motivo máximo 500 caracteres')
+        .optional(),
 
     observaciones: z.string()
         .max(3000, 'Observaciones máximo 3000 caracteres')
