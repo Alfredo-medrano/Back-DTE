@@ -11,6 +11,8 @@ const creditoFiscal = require('./credito-fiscal.schema');
 const notaCredito = require('./nota-credito.schema');
 const notaDebito = require('./nota-debito.schema');
 const sujetoExcluido = require('./sujeto-excluido.schema');
+const notaRemision = require('./nota-remision.schema');
+const facturaExportacion = require('./factura-exportacion.schema');
 
 /**
  * Selecciona el validador correcto según tipo de DTE
@@ -19,8 +21,10 @@ const obtenerValidador = (tipoDte) => {
     const validadores = {
         '01': facturaFE.validarFacturaFE,
         '03': creditoFiscal.validarCCF,
+        '04': notaRemision.validarNR,
         '05': notaCredito.validarNotaCredito,
         '06': notaDebito.validarNotaDebito,
+        '11': facturaExportacion.validarFEX,
         '14': sujetoExcluido.validarFSE,
     };
 
@@ -38,7 +42,7 @@ const validarPorTipo = (tipoDte, datos) => {
     if (!validador) {
         return {
             exito: false,
-            errores: [{ campo: 'tipoDte', mensaje: `Tipo DTE '${tipoDte}' no soportado. Disponibles: 01, 03, 05, 06, 14` }],
+            errores: [{ campo: 'tipoDte', mensaje: `Tipo DTE '${tipoDte}' no soportado. Disponibles: 01, 03, 04, 05, 06, 11, 14` }],
         };
     }
 
@@ -55,6 +59,8 @@ module.exports = {
     notaCredito,
     notaDebito,
     sujetoExcluido,
+    notaRemision,
+    facturaExportacion,
 
     // Helpers
     obtenerValidador,

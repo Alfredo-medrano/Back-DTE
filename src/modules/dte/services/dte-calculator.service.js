@@ -72,7 +72,7 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const tributos = usaTributos ? generarTributosCuerpo(tipoDte) : null;
 
     // Tipos de DTE donde Hacienda PROHÍBE ivaItem en el detalle
-    const sinIvaItem = ['03', '05', '06', '14'].includes(tipoDte);
+    const sinIvaItem = ['03', '04', '05', '06', '14'].includes(tipoDte);
     // NC/ND (05/06) y FSE (14) prohíben psv y noGravado
     const sinPsvNoGravado = ['05', '06', '14'].includes(tipoDte);
     // NC/ND requieren numeroDocumento como string no nulo
@@ -212,7 +212,32 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     }
 
     // ══════════════════════════════════════════════════════════════
-    // FE-01 / CCF-03 / FSE-14 / FEX-11: resumen extendido
+    // NR (04): resumen simplificado (schema v3)
+    // PROHIBIDO: condicionOperacion, pagos, numPagoElectronico,
+    //            saldoFavor, totalPagar, totalNoGravado, ivaPerci1, ivaRete1, reteRenta
+    // ══════════════════════════════════════════════════════════════
+    if (tipoDte === '04') {
+        const montoTotalOperacion = redondear(subTotal + totalIva);
+        return {
+            totalNoSuj,
+            totalExenta,
+            totalGravada,
+            subTotalVentas,
+            descuNoSuj: 0.00,
+            descuExenta: 0.00,
+            descuGravada: totalDescuento,
+            porcentajeDescuento: 0.00,
+            totalDescu: totalDescuento,
+            tributos: tributosResumen,
+            subTotal,
+            montoTotalOperacion,
+            totalLetras: numeroALetras(montoTotalOperacion),
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FE-01 / CCF-03: resumen extendido
+    // FEX-11 y FSE-14 también están procesados en sus propios builders o arriba
     // ══════════════════════════════════════════════════════════════
     let montoTotalOperacion, reteRenta = 0.00;
 

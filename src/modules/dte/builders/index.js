@@ -12,6 +12,8 @@ const ccfBuilder = require('./ccf.builder');
 const ncBuilder = require('./nc.builder');
 const ndBuilder = require('./nd.builder');
 const fseBuilder = require('./fse.builder');
+const nrBuilder = require('./nr.builder');
+const fexBuilder = require('./fex.builder');
 
 /**
  * Mapa de builders por tipo DTE
@@ -19,8 +21,10 @@ const fseBuilder = require('./fse.builder');
 const builders = {
     '01': feBuilder,
     '03': ccfBuilder,
+    '04': nrBuilder,
     '05': ncBuilder,
     '06': ndBuilder,
+    '11': fexBuilder,
     '14': fseBuilder,
 };
 
@@ -63,8 +67,10 @@ module.exports = {
     baseBuilder,
     feBuilder,
     ccfBuilder,
+    nrBuilder,
     ncBuilder,
     ndBuilder,
+    fexBuilder,
     fseBuilder,
 
     // Helpers

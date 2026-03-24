@@ -45,18 +45,19 @@ const TIPOS_DTE = {
 
     // NOTA DE REMISIÓN
     '04': {
-        version: 1,
+        version: 3,
         codigo: '04',
         nombre: 'Nota de Remisión',
         nombreCorto: 'NR',
-        schemaFile: 'fe-nr-v1.json',
+        schemaFile: 'fe-nr-v3.json',
         precioIncluyeIVA: false,
-        usaTributos: false,
+        usaTributos: true,
         usaReceptor: true,
         usaSujetoExcluido: false,
         requiereNRCReceptor: false,
         requiereDocRelacionado: false,
         obligatorio: false,
+        codigoTributoIVA: '20',
     },
 
     // NOTA DE CRÉDITO

@@ -75,6 +75,7 @@ model Emisor {
   correlativoNC  Int @default(1)
   correlativoND  Int @default(1)
   correlativoFSE Int @default(1)
+  correlativoNR  Int @default(1)
   correlativoFEX Int @default(1)
 
   createdAt DateTime @default(now())
