@@ -670,7 +670,91 @@
                     }
                 },
                 {
-                    "name": "12. Listar Facturas (con filtros)",
+                    "name": "12. Crear Nota de Remisión (DTE-04) 🆕",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"04\",\n  \"receptor\": {\n    \"tipoDocumento\": \"36\",\n    \"numDocumento\": \"06141802941035\",\n    \"nombre\": \"CLIENTE NR EJEMPLO\",\n    \"bienTitulo\": \"02\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"PRODCUTO ENVIADO A CONSIGNACIÓN\",\n      \"cantidad\": 5,\n      \"precioUnitario\": 10,\n      \"tipoItem\": 1\n    }\n  ],\n  \"condicionOperacion\": 1\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "🆕 NUEVO — Nota de Remisión. Requiere bienTitulo (01=Consignación, 02=Otro) en el receptor."
+                    }
+                },
+                {
+                    "name": "13. Crear Factura de Exportación (DTE-11) 🆕",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{api_key}}"
+                            },
+                            {
+                                "key": "X-Emisor-Id",
+                                "value": "{{emisor_id}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tipoDte\": \"11\",\n  \"receptor\": {\n    \"nombre\": \"CLIENTE INTERNACIONAL LLC\",\n    \"codPais\": \"9320\",\n    \"nombrePais\": \"ESTADOS UNIDOS\",\n    \"complemento\": \"123 EXPORT STREET, MIAMI, FL\",\n    \"tipoPersona\": 1,\n    \"correo\": \"contacto@internacional.com\"\n  },\n  \"items\": [\n    {\n      \"descripcion\": \"SERVICIOS PROFESIONALES EXPORTADOS\",\n      \"cantidad\": 1,\n      \"precioUnitario\": 500,\n      \"tipoItem\": 2,\n      \"noGravado\": 0\n    }\n  ],\n  \"datosExportacion\": {\n    \"tipoItemExpor\": 2,\n    \"seguro\": 0,\n    \"flete\": 0,\n    \"codIncoterms\": \"EXW\"\n  },\n  \"condicionOperacion\": 1\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/dte/v2/facturar",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "dte",
+                                "v2",
+                                "facturar"
+                            ]
+                        },
+                        "description": "🆕 NUEVO — Factura de Exportación. Cliente internacional sin municipio/departamento. Requiere datosExportacion."
+                    }
+                },
+                {
+                    "name": "14. Listar Facturas (con filtros)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -729,7 +813,7 @@
                     }
                 },
                 {
-                    "name": "13. Consultar Factura por Código",
+                    "name": "15. Consultar Factura por Código",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -759,7 +843,7 @@
                     }
                 },
                 {
-                    "name": "14. Estadísticas del Tenant",
+                    "name": "16. Estadísticas del Tenant",
                     "request": {
                         "method": "GET",
                         "header": [
