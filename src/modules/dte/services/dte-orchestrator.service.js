@@ -15,6 +15,7 @@
 const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
 const { construirDocumento: buildDTE } = require('../builders');
+const logger = require('../../../shared/logger');
 
 /**
  * Construye el documento DTE sin firmar ni enviar.
@@ -32,7 +33,7 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
         documentoRelacionado = null,
     } = datos;
 
-    console.log(`📄 [Tenant: ${tenantId}] Construyendo ${tipoDte} para ${receptor.nombre || 'RECEPTOR'}`);
+    logger.info(`Construyendo DTE ${tipoDte}`, { tenantId, receptor: receptor.nombre || 'RECEPTOR' });
 
     if (!items || !Array.isArray(items)) {
         throw new Error(`Los items son requeridos y deben ser un array. Recibido: ${typeof items}`);
@@ -53,7 +54,7 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
         throw new Error(`Builder DTE-${tipoDte}: ${buildError.message}`);
     }
 
-    console.log(`✅ Documento DTE construido: ${documentoDTE.identificacion.codigoGeneracion}`);
+    logger.info('Documento DTE construido', { codigoGeneracion: documentoDTE.identificacion.codigoGeneracion });
     return documentoDTE;
 };
 
@@ -67,7 +68,7 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
     const { version, codigoGeneracion, numeroControl } = documentoDTE.identificacion;
 
     // Paso 1: Firmar
-    console.log('🔏 Enviando a firmar...');
+    logger.info('Enviando a firmar');
     const resultadoFirma = await signerService.firmarDocumento({
         documento: documentoDTE,
         nit: emisor.nit,
@@ -84,7 +85,7 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
     }
 
     // Paso 2: Enviar a Hacienda
-    console.log('📤 Transmitiendo a Hacienda...');
+    logger.info('Transmitiendo a Hacienda');
     const resultadoMH = await mhService.enviarDTE({
         documentoFirmado: resultadoFirma.firma,
         ambiente: emisor.ambiente,
@@ -160,7 +161,7 @@ const reintentarEnvio = async ({ dte, emisor }) => {
         };
     }
 
-    console.log(`🔄 Reintentando envío DTE ${codigoGeneracion} (tipo ${tipoDte})...`);
+    logger.info(`Reintentando envío DTE`, { codigoGeneracion, tipoDte });
     return await firmarYEnviar({
         documentoDTE: jsonOriginal,
         emisor,

@@ -17,6 +17,8 @@ validarEntorno();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const config = require('./config/env');
 const logger = require('./shared/logger');
 
@@ -36,8 +38,23 @@ const app = express();
 // MIDDLEWARES GLOBALES
 // ========================================
 
-// CORS
-app.use(cors());
+// Seguridad HTTP (X-Content-Type-Options, HSTS, X-Frame-Options, etc.)
+app.use(helmet());
+
+// Compresión gzip para respuestas
+app.use(compression());
+
+// CORS — lee orígenes permitidos de env (separados por coma)
+const corsOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : ['*'];
+app.use(cors({
+    origin: corsOrigins.includes('*') ? true : corsOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Emisor-Id', 'X-Admin-Key'],
+    credentials: true,
+    maxAge: 86400, // Preflight cache: 24h
+}));
 
 // Parsear JSON
 app.use(express.json({ limit: '10mb' }));
@@ -94,7 +111,6 @@ app.get('/health', async (req, res) => {
         res.status(503).json({
             status: 'ERROR',
             database: 'disconnected',
-            error: error.message,
             timestamp: new Date().toISOString(),
         });
     }
@@ -108,8 +124,8 @@ app.get('/health', async (req, res) => {
 app.use('/api/dte', dteRoutes);
 
 // Panel de administración IAM (Tenants, Emisores, API Keys)
-// Protegido por X-Admin-Key header (ver iam.routes.js)
-app.use('/admin', iamRoutes);
+// Protegido por X-Admin-Key header + rate limiter
+app.use('/admin', rateLimiter, iamRoutes);
 
 // ========================================
 // MANEJO DE ERRORES
@@ -144,7 +160,6 @@ const server = app.listen(PORT, () => {
     retryQueue.iniciarProcesadorPeriodico(5);
     logger.info('Retry queue processor started', { intervalMinutes: 5 });
 });
-
 // ========================================
 // GRACEFUL SHUTDOWN
 // ========================================

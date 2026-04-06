@@ -8,6 +8,7 @@
  */
 
 const { prisma, conReintento } = require('../../../shared/db');
+const logger = require('../../../shared/logger');
 
 /**
  * Crea un registro DTE en estado CREADO
@@ -53,7 +54,7 @@ const crear = async (datos) => {
         },
     }));
 
-    console.log(`📝 DTE registrado: ${codigoGeneracion} [CREADO]`);
+    logger.info('DTE registrado', { codigoGeneracion, status: 'CREADO' });
     return dte;
 };
 
@@ -95,7 +96,7 @@ const actualizarEstado = async (id, datos) => {
         },
     }));
 
-    console.log(`📝 DTE ${id} actualizado: [${status}]`);
+    logger.info('DTE actualizado', { id, status });
     return dte;
 };
 
@@ -121,10 +122,17 @@ const buscarPorCodigo = async (codigoGeneracion, emisorId) => {
 
 /**
  * Busca un DTE por número de control
+ * SEGURIDAD: Requiere emisorId para garantizar aislamiento multi-tenant
  */
-const buscarPorNumeroControl = async (numeroControl) => {
-    return await prisma.dte.findUnique({
-        where: { numeroControl },
+const buscarPorNumeroControl = async (numeroControl, emisorId) => {
+    if (!emisorId) {
+        throw new Error('emisorId es requerido para garantizar aislamiento multi-tenant');
+    }
+    return await prisma.dte.findFirst({
+        where: {
+            numeroControl,
+            emisorId, // CRÍTICO: Filtrar por tenant
+        },
     });
 };
 
@@ -191,19 +199,22 @@ const listar = async (filtros = {}) => {
  * Obtiene estadísticas de DTEs de un tenant
  */
 const estadisticas = async (tenantId, periodo = 'mes') => {
-    const hoy = new Date();
+    const ahora = new Date();
     let fechaDesde;
 
     switch (periodo) {
         case 'dia':
-            fechaDesde = new Date(hoy.setHours(0, 0, 0, 0));
+            fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
             break;
-        case 'semana':
-            fechaDesde = new Date(hoy.setDate(hoy.getDate() - 7));
+        case 'semana': {
+            const hace7dias = new Date(ahora);
+            hace7dias.setDate(hace7dias.getDate() - 7);
+            fechaDesde = hace7dias;
             break;
+        }
         case 'mes':
         default:
-            fechaDesde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+            fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     }
 
     const stats = await prisma.dte.groupBy({

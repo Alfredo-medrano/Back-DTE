@@ -16,6 +16,7 @@
 
 const { tenantService, apiKeyService } = require('../services');
 const { BadRequestError, NotFoundError } = require('../../../shared/errors');
+const { crearTenantSchema, crearEmisorSchema, crearApiKeySchema } = require('../dtos/admin.schema');
 
 // ------------------------------------------------
 // TENANTS
@@ -27,13 +28,13 @@ const { BadRequestError, NotFoundError } = require('../../../shared/errors');
  */
 const crearTenant = async (req, res, next) => {
     try {
-        const { nombre, email, telefono, plan } = req.body;
-
-        if (!nombre || !email) {
-            throw new BadRequestError('nombre y email son requeridos', 'DATOS_INCOMPLETOS');
+        const parsed = crearTenantSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const errores = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+            throw new BadRequestError(`Validaci\u00f3n fallida: ${errores.join(', ')}`, 'VALIDATION_ERROR');
         }
 
-        const tenant = await tenantService.crear({ nombre, email, telefono, plan });
+        const tenant = await tenantService.crear(parsed.data);
 
         res.status(201).json({
             exito: true,
@@ -86,19 +87,18 @@ const obtenerTenant = async (req, res, next) => {
 const crearEmisor = async (req, res, next) => {
     try {
         const { tenantId } = req.params;
-        const datosEmisor = req.body;
 
-        const campos = ['nit', 'nrc', 'nombre', 'codActividad', 'descActividad', 'complemento', 'telefono', 'correo', 'mhClaveApi', 'mhClavePrivada'];
-        const faltantes = campos.filter(c => !datosEmisor[c]);
-        if (faltantes.length > 0) {
-            throw new BadRequestError(`Campos requeridos faltantes: ${faltantes.join(', ')}`, 'DATOS_INCOMPLETOS');
+        const parsed = crearEmisorSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const errores = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+            throw new BadRequestError(`Validaci\u00f3n fallida: ${errores.join(', ')}`, 'VALIDATION_ERROR');
         }
 
         // Verificar que el tenant existe
         const tenant = await tenantService.obtenerPorId(tenantId);
         if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${tenantId}`);
 
-        const emisor = await tenantService.crearEmisor(tenantId, datosEmisor);
+        const emisor = await tenantService.crearEmisor(tenantId, parsed.data);
 
         // No devolver credenciales encriptadas en la respuesta
         const { mhClaveApi, mhClavePrivada, ...emisorSafe } = emisor;
@@ -124,13 +124,18 @@ const crearEmisor = async (req, res, next) => {
 const crearApiKey = async (req, res, next) => {
     try {
         const { tenantId } = req.params;
-        const { nombre, ambiente, permisos, rateLimit } = req.body;
+
+        const parsed = crearApiKeySchema.safeParse(req.body);
+        if (!parsed.success) {
+            const errores = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+            throw new BadRequestError(`Validaci\u00f3n fallida: ${errores.join(', ')}`, 'VALIDATION_ERROR');
+        }
 
         // Verificar que el tenant existe
         const tenant = await tenantService.obtenerPorId(tenantId);
         if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${tenantId}`);
 
-        const apiKey = await apiKeyService.crear(tenantId, { nombre, ambiente, permisos, rateLimit });
+        const apiKey = await apiKeyService.crear(tenantId, parsed.data);
 
         res.status(201).json({
             exito: true,

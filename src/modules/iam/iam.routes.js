@@ -10,6 +10,7 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const iamController = require('./controllers/iam.controller');
 
@@ -29,7 +30,8 @@ const adminGuard = (req, res, next) => {
         });
     }
 
-    if (!headerKey || headerKey !== adminKey) {
+    if (!headerKey || headerKey.length !== adminKey.length ||
+        !crypto.timingSafeEqual(Buffer.from(headerKey), Buffer.from(adminKey))) {
         return res.status(401).json({
             exito: false,
             mensaje: 'Acceso denegado. Proporciona X-Admin-Key válida.',

@@ -9,6 +9,7 @@ const { dteRepository } = require('../repositories');
 const mhSender = require('./mh-sender.service');
 const signerService = require('./signer.service');
 const { tenantService } = require('../../iam');
+const logger = require('../../../shared/logger');
 
 /**
  * Configuración de reintentos
@@ -30,7 +31,7 @@ let colaEnProceso = false;
  * @param {object} dte - DTE desde BD
  */
 const procesarReintento = async (dte) => {
-    console.log(`🔄 Reintentando DTE: ${dte.codigoGeneracion} (intento ${dte.intentos + 1})`);
+    logger.info('Reintentando DTE', { codigoGeneracion: dte.codigoGeneracion, intento: dte.intentos + 1 });
 
     try {
         // Obtener emisor con credenciales
@@ -72,7 +73,7 @@ const procesarReintento = async (dte) => {
                 fechaProcesamiento: resultadoMH.fechaProcesamiento,
                 jsonFirmado: resultadoFirma.firma,
             });
-            console.log(`✅ DTE ${dte.codigoGeneracion} procesado exitosamente en reintento`);
+            logger.info('DTE procesado en reintento', { codigoGeneracion: dte.codigoGeneracion });
             return { exito: true };
         } else {
             // Sigue fallando
@@ -81,7 +82,7 @@ const procesarReintento = async (dte) => {
                 observaciones: JSON.stringify(resultadoMH.observaciones),
                 errorLog: JSON.stringify(resultadoMH.error),
             });
-            console.log(`❌ DTE ${dte.codigoGeneracion} falló en reintento`);
+            logger.warn('DTE falló en reintento', { codigoGeneracion: dte.codigoGeneracion });
             return { exito: false, error: resultadoMH.error };
         }
 
@@ -90,7 +91,7 @@ const procesarReintento = async (dte) => {
             status: dte.intentos + 1 >= CONFIG.maxIntentos ? 'RECHAZADO' : 'ERROR',
             errorLog: error.message,
         });
-        console.error(`❌ Error en reintento: ${error.message}`);
+        logger.error('Error en reintento', { error: error.message });
         return { exito: false, error: error.message };
     }
 };
@@ -100,16 +101,16 @@ const procesarReintento = async (dte) => {
  */
 const procesarCola = async () => {
     if (colaEnProceso) {
-        console.log('⏳ Cola ya en proceso, saltando...');
+        logger.debug('Cola ya en proceso, saltando');
         return;
     }
 
     colaEnProceso = true;
-    console.log('🚀 Iniciando procesamiento de cola de reintentos...');
+    logger.info('Iniciando procesamiento de cola de reintentos');
 
     try {
         const pendientes = await dteRepository.pendientesReintento(CONFIG.maxIntentos);
-        console.log(`📋 ${pendientes.length} DTEs pendientes de reintento`);
+        logger.info('DTEs pendientes de reintento', { count: pendientes.length });
 
         for (const dte of pendientes) {
             // Delay exponencial entre reintentos
@@ -120,7 +121,7 @@ const procesarCola = async () => {
         }
 
     } catch (error) {
-        console.error('❌ Error en cola de reintentos:', error.message);
+        logger.error('Error en cola de reintentos', { error: error.message });
     } finally {
         colaEnProceso = false;
     }
@@ -131,7 +132,7 @@ const procesarCola = async () => {
  */
 const iniciarProcesadorPeriodico = (intervaloMinutos = 5) => {
     const intervaloMs = intervaloMinutos * 60 * 1000;
-    console.log(`⏰ Procesador de reintentos iniciado (cada ${intervaloMinutos} min)`);
+    logger.info('Procesador de reintentos iniciado', { intervaloMinutos });
 
     // Ejecutar inmediatamente al iniciar
     procesarCola();

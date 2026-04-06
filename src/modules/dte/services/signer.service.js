@@ -8,6 +8,8 @@
  */
 
 const { dockerClient } = require('../../../shared/integrations');
+const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker');
+const logger = require('../../../shared/logger');
 
 /**
  * Verifica si el contenedor Docker está activo
@@ -62,7 +64,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
         // Formatear NIT para Docker (14 dígitos)
         const nitDocker = nit.padStart(14, '0');
 
-        console.log(`📝 [${nit}] Enviando documento a firmar...`);
+        logger.info('Enviando documento a firmar', { nit });
 
         const payload = {
             nit: nitDocker,
@@ -71,10 +73,12 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
             dteJson: documento,
         };
 
-        const response = await dockerClient.post('/firmardocumento/', payload);
+        const response = await ejecutarConCircuito('DOCKER_FIRMADOR', () =>
+            dockerClient.post('/firmardocumento/', payload)
+        );
 
         if (response.data && response.data.body) {
-            console.log(`✅ [${nit}] Documento firmado exitosamente`);
+            logger.info('Documento firmado exitosamente', { nit });
             return {
                 exito: true,
                 firma: response.data.body,
@@ -89,7 +93,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
         };
 
     } catch (error) {
-        console.error(`❌ [${nit}] Error al firmar:`, error.message);
+        logger.error('Error al firmar', { nit, error: error.message });
         return {
             exito: false,
             error: error.response?.data || error.message,

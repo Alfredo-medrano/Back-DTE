@@ -42,9 +42,11 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "axios": "^1.13.4",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "helmet": "^8.1.0",
     "prisma": "^5.22.0",
     "uuid": "^13.0.0",
     "winston": "^3.19.0",

@@ -8,6 +8,7 @@
 
 const { apiKeyService } = require('../../modules/iam/services');
 const { UnauthorizedError, ForbiddenError } = require('../errors');
+const logger = require('../logger');
 
 /**
  * Middleware para inyectar contexto del tenant en cada request
@@ -65,7 +66,7 @@ const tenantContext = async (req, res, next) => {
             req.emisor = contexto.emisores[0];
         }
 
-        console.log(`🔐 Tenant: ${req.tenant.nombre} | Emisor: ${req.emisor.nombre}`);
+        logger.info('Tenant autenticado', { tenant: req.tenant.nombre, emisor: req.emisor.nombre });
 
         next();
     } catch (error) {

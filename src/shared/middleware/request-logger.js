@@ -7,6 +7,8 @@
  * INCLUYE: tenantId para filtrado de logs
  */
 
+const logger = require('../logger');
+
 /**
  * Logger de peticiones HTTP
  * Registra método, ruta, duración, status y tenantId
@@ -39,15 +41,8 @@ const requestLogger = (req, res, next) => {
             duration: `${duration}ms`,
         };
 
-        // Log compacto para consola
-        console.log(
-            `${statusIcon} [${requestId}] ${tenantId.substring(0, 8)}... | ${req.method} ${req.path} → ${res.statusCode} (${duration}ms)`
-        );
-
-        // En producción, log JSON estructurado para parsing
-        if (process.env.NODE_ENV === 'production') {
-            console.log(JSON.stringify(logEntry));
-        }
+        // Log estructurado con Winston
+        logger.info('HTTP Request', logEntry);
 
         return originalJson(body);
     };
@@ -61,17 +56,13 @@ const requestLogger = (req, res, next) => {
  */
 const detailedLogger = (req, res, next) => {
     if (process.env.NODE_ENV === 'development') {
-        console.log('📥 Request:', {
+        logger.debug('Request details', {
             requestId: req.requestId,
             tenantId: req.tenant?.id,
             method: req.method,
             path: req.path,
             query: req.query,
             body: req.body ? { ...req.body, mhClavePrivada: '[REDACTED]' } : undefined,
-            headers: {
-                'content-type': req.headers['content-type'],
-                'authorization': req.headers['authorization'] ? '[PRESENTE]' : '[AUSENTE]',
-            },
         });
     }
     next();
@@ -90,8 +81,7 @@ const generateRequestId = () => {
 const errorLogger = (error, req, res, next) => {
     const tenantId = req.tenant?.id || 'anonymous';
 
-    console.error('🔴 ERROR:', {
-        timestamp: new Date().toISOString(),
+    logger.error('Request error', {
         requestId: req.requestId,
         tenantId,
         method: req.method,

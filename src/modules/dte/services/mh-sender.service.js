@@ -9,6 +9,7 @@
 
 const { mhClient, mhAuthClient } = require('../../../shared/integrations');
 const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker');
+const logger = require('../../../shared/logger');
 
 /**
  * Cache de tokens por NIT (Multi-tenant)
@@ -36,11 +37,11 @@ const autenticar = async (credenciales) => {
         const cached = tokenCache.get(cacheKey);
 
         if (cached && cached.expiracion > Date.now()) {
-            console.log(`🔑 [${nit}] Usando token en caché`);
+            logger.debug('Usando token en caché', { nit });
             return { exito: true, token: cached.token, mensaje: 'Token en caché válido' };
         }
 
-        console.log(`🔐 [${nit}] Solicitando nuevo token a Hacienda...`);
+        logger.info('Solicitando nuevo token a Hacienda', { nit });
 
         const params = new URLSearchParams();
         params.append('user', nit);
@@ -54,16 +55,16 @@ const autenticar = async (credenciales) => {
                 token: response.data.body.token,
                 expiracion: Date.now() + (23 * 60 * 60 * 1000), // 23 horas
             });
-            console.log(`✅ [${nit}] Token obtenido exitosamente`);
+            logger.info('Token obtenido exitosamente', { nit });
             return { exito: true, token: response.data.body.token, mensaje: 'Autenticación exitosa' };
         }
 
         return { exito: false, token: null, error: response.data, mensaje: 'Respuesta inesperada de Hacienda' };
 
     } catch (error) {
-        console.error(`❌ [${nit}] Error de autenticación:`, error.message);
+        logger.error('Error de autenticación MH', { nit, error: error.message });
         if (process.env.DEBUG_AUTH === 'true' && error.response) {
-            console.error('[DEBUG_AUTH] Response Data:', JSON.stringify(error.response.data, null, 2));
+            logger.debug('DEBUG_AUTH response data', { data: error.response.data });
         }
         return { exito: false, token: null, error: error.response?.data || error.message, mensaje: 'Error al autenticar' };
     }
@@ -86,8 +87,7 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
             return { exito: false, error: auth.error, mensaje: 'No se pudo obtener token' };
         }
 
-        console.log(`📤 [${credenciales.nit}] Enviando DTE a Hacienda...`);
-        console.log(`   Ambiente: ${ambiente}, Tipo: ${tipoDte}, Versión: ${version}`);
+        logger.info('Enviando DTE a Hacienda', { nit: credenciales.nit, ambiente, tipoDte, version });
 
         const payload = {
             ambiente,
@@ -106,7 +106,7 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
         });
 
         if (response.data?.estado === 'PROCESADO') {
-            console.log(`✅ [${credenciales.nit}] DTE procesado por Hacienda`);
+            logger.info('DTE procesado por Hacienda', { nit: credenciales.nit });
             return {
                 exito: true,
                 estado: response.data.estado,
@@ -127,7 +127,7 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
         };
 
     } catch (error) {
-        console.error(`❌ [${credenciales.nit}] Error al enviar DTE:`, error.message);
+        logger.error('Error al enviar DTE', { nit: credenciales.nit, error: error.message });
         return { exito: false, error: error.response?.data || error.message, mensaje: 'Error de comunicación' };
     }
 };
@@ -186,10 +186,10 @@ const anularDTE = async ({ documentoAnulacion, ambiente, credenciales }) => {
 const limpiarToken = (nit) => {
     if (nit) {
         tokenCache.delete(nit);
-        console.log(`🧹 Token limpiado para NIT: ${nit}`);
+        logger.info('Token limpiado', { nit });
     } else {
         tokenCache.clear();
-        console.log('🧹 Todos los tokens limpiados');
+        logger.info('Todos los tokens limpiados');
     }
 };
 

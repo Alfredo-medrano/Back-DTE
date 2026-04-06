@@ -13,6 +13,7 @@ const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { tenantService } = require('../../iam');
 const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
 const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
+const logger = require('../../../shared/logger');
 
 /**
  * Crear una nueva factura electrónica (flujo completo MULTI-TENANT)
@@ -23,8 +24,10 @@ const crearFactura = async (req, res, next) => {
     let dteId = null; // Para tracking en caso de error parcial
 
     try {
-        const { receptor, items, condicionOperacion, documentoRelacionado } = req.body;
-        const tipoDte = req.body.tipoDte || '01';
+        // SEGURIDAD: Usar datos validados por Zod en vez de req.body crudo
+        const validatedData = req.validatedBody || req.body;
+        const { receptor, items, condicionOperacion, documentoRelacionado } = validatedData;
+        const tipoDte = validatedData.tipoDte || '01';
         const { tenant, emisor } = req;
 
         // Validación de entrada
@@ -40,7 +43,7 @@ const crearFactura = async (req, res, next) => {
             );
         }
 
-        console.log(`📄 [${tenant.nombre}] Creando factura ${tipoDte}...`);
+        logger.info(`Creando factura ${tipoDte}`, { tenant: tenant.nombre, tipoDte });
 
         // Obtener credenciales desencriptadas del emisor
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
@@ -92,7 +95,7 @@ const crearFactura = async (req, res, next) => {
         });
 
         dteId = dteCreado.id;
-        console.log(`📝 DTE guardado en BD: ${dteId} [CREADO]`);
+        logger.info(`DTE guardado en BD`, { dteId, status: 'CREADO' });
 
         // ═══════════════════════════════════════
         // PASO 3: Firmar y enviar a Hacienda
@@ -124,8 +127,11 @@ const crearFactura = async (req, res, next) => {
         } catch (dbError) {
             // CRÍTICO: Hacienda ya procesó pero no pudimos guardar el resultado
             // El DTE queda en estado CREADO para reconciliación manual
-            console.error(`🚨 [CRITICAL] DTE ${dteId} procesado por Hacienda pero falló actualización BD:`, dbError.message);
-            console.error(`   Sello: ${resultado.datos?.selloRecibido || 'N/A'}`);
+            logger.error('CRITICAL: DTE procesado por MH pero falló actualización BD', {
+                dteId,
+                sello: resultado.datos?.selloRecibido || 'N/A',
+                dbError: dbError.message,
+            });
             // NO lanzar error al cliente — el DTE SÍ fue procesado
         }
 
@@ -153,12 +159,11 @@ const crearFactura = async (req, res, next) => {
                     errorLog: error.message,
                 });
             } catch (dbError) {
-                console.error(`🚨 No se pudo actualizar DTE ${dteId} a ERROR:`, dbError.message);
+                logger.error('No se pudo actualizar DTE a ERROR', { dteId, dbError: dbError.message });
             }
         }
 
-        console.error('❌ Error en crearFactura:', error);
-        console.error('Stack:', error.stack);
+        logger.error('Error en crearFactura', { error: error.message, stack: error.stack });
         next(error);
     }
 };
@@ -394,29 +399,71 @@ const anularDTE = async (req, res, next) => {
 
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
-        // Construir documento de anulación (Invalidación)
+        // Construir documento de anulación (Invalidación v2)
+        const fechaActual = generarFechaActual();
+        const horaActual = generarHoraEmision();
+        const codigoGeneracionAnulacion = generarCodigoGeneracion();
+
         const documentoAnulacion = {
-            nit: emisorConCredenciales.nit,
-            activo: true,
-            ambiente: emisorConCredenciales.ambiente,
-            codigoGeneracion: require('../../../shared/utils').generarCodigoGeneracion(),
-            selloRecibido: dteLocal.selloRecibido,
+            identificacion: {
+                version: 2,
+                ambiente: emisorConCredenciales.ambiente,
+                codigoGeneracion: codigoGeneracionAnulacion,
+                fecAnula: fechaActual,
+                horAnula: horaActual
+            },
+            emisor: {
+                nit: emisorConCredenciales.nit,
+                nombre: emisorConCredenciales.nombre,
+                tipoEstablecimiento: emisorConCredenciales.tipoEstablecimiento,
+                nomEstablecimiento: emisorConCredenciales.nombreComercial || emisorConCredenciales.nombre,
+                codEstableMH: emisorConCredenciales.codEstableMH || null,
+                codEstable: emisorConCredenciales.codEstable || null,
+                codPuntoVentaMH: emisorConCredenciales.codPuntoVentaMH || null,
+                codPuntoVenta: emisorConCredenciales.codPuntoVenta || null,
+                telefono: emisorConCredenciales.telefono,
+                correo: emisorConCredenciales.correo
+            },
             documento: {
                 tipoDte: dteLocal.tipoDte,
-                codigoGeneracion,
+                codigoGeneracion: dteLocal.codigoGeneracion,
+                selloRecibido: dteLocal.selloRecibido,
+                numeroControl: dteLocal.numeroControl,
+                fecEmi: dteLocal.fechaEmision.toISOString().split('T')[0],
+                montoIva: dteLocal.totales?.totalIva != null ? parseFloat(dteLocal.totales.totalIva) : 0.00,
+                codigoGeneracionR: null,
+                tipoDocumento: dteLocal.receptor?.tipoDocumento || '36',
+                numDocumento: dteLocal.receptor?.numDocumento || dteLocal.receptor?.nit || '00000000000000',
+                nombre: dteLocal.receptor?.nombre || 'CONSUMIDOR FINAL'
+            },
+            motivo: {
+                tipoAnulacion: 2, // 2 = Anulacion de DTE (error en datos)
                 motivoAnulacion,
                 nombreResponsable: (nombreResponsable || emisorConCredenciales.nombre).toUpperCase(),
-                tipoDocResponsable: tipoResponsable || '36',
+                tipDocResponsable: tipoResponsable || '36',
                 numDocResponsable: numDocResponsable || emisorConCredenciales.nit,
                 nombreSolicita: (nombreSolicita || '').toUpperCase(),
-                tipoDocSolicita: tipoSolicita || '36',
-                numDocSolicita: numDocSolicita || '',
-                fechaAnulacion: new Date().toISOString().split('T')[0],
-            },
+                tipDocSolicita: tipoSolicita || '36',
+                numDocSolicita: numDocSolicita || ''
+            }
         };
 
+        // 1. Firmar el documento de anulación
+        logger.info('Firmando documento de anulación', { codigoGeneracion });
+        const resultadoFirma = await signer.firmarAnulacion({
+            documento: documentoAnulacion,
+            nit: emisorConCredenciales.nit,
+            clavePrivada: emisorConCredenciales.mhClavePrivada,
+        });
+
+        if (!resultadoFirma.exito) {
+            throw new Error(`Error al firmar anulación: ${resultadoFirma.error}`);
+        }
+
+        // 2. Enviar a Hacienda
+        logger.info('Transmitiendo anulación a Hacienda', { codigoGeneracion });
         const resultado = await mhSender.anularDTE({
-            documentoAnulacion,
+            documentoAnulacion: resultadoFirma.firma, // Pasamos el JWS firmado
             ambiente: emisorConCredenciales.ambiente,
             credenciales: {
                 nit: emisorConCredenciales.nit,

@@ -198,6 +198,7 @@ const obtenerSiguienteCorrelativo = async (emisorId, tipoDte) => {
     const campoCorrelativo = {
         '01': 'correlativoFE',
         '03': 'correlativoCCF',
+        '04': 'correlativoNR',
         '05': 'correlativoNC',
         '06': 'correlativoND',
         '11': 'correlativoFEX',
