@@ -28,6 +28,12 @@ const REQUERIDAS = [
         descripcion: 'Clave de encriptación de credenciales MH (mín. 32 chars)',
         minLength: 32,
     },
+    {
+        key: 'CRYPTO_SALT',
+        descripcion: 'Salt hex para derivación scrypt de la clave AES (mín. 32 chars hex = 16 bytes)',
+        minLength: 32,
+        ejemplo: 'Generar con: node -e "console.log(require(\'crypto\').randomBytes(16).toString(\'hex\'))"',
+    },
 ];
 
 const OPCIONALES_CON_ADVERTENCIA = [

@@ -19,6 +19,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
 const config = require('./config/env');
 const logger = require('./shared/logger');
 
@@ -30,6 +31,7 @@ const { prisma } = require('./shared/db');
 const { dteRoutes, services: dteServices } = require('./modules/dte');
 const { retryQueue } = dteServices;
 const iamRoutes = require('./modules/iam/iam.routes');
+const authRoutes = require('./modules/auth/auth.routes');
 
 // Crear aplicación Express
 const app = express();
@@ -47,12 +49,29 @@ app.use(compression());
 // CORS — lee orígenes permitidos de env (separados por coma)
 const corsOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
-    : ['*'];
+    : [];
+
+const isWildcard = corsOrigins.length === 0 || corsOrigins.includes('*');
+
+// SECURITY: en producción es obligatorio definir CORS_ORIGINS explícitos.
+// Un wildcard con credentials: true viola la spec CORS y abre la API a
+// ataques CSRF desde cualquier origen.
+if (isWildcard && config.env === 'production') {
+    console.error('\n❌ [SECURITY] CORS_ORIGINS no está definido o contiene "*" en producción.');
+    console.error('   Define los orígenes permitidos en .env: CORS_ORIGINS=https://app.tudominio.com');
+    process.exit(1);
+}
+
 app.use(cors({
-    origin: corsOrigins.includes('*') ? true : corsOrigins,
+    // En desarrollo con wildcard: true permite cualquier origen pero sin credentials.
+    // En producción: siempre lista explícita.
+    origin: isWildcard ? true : corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Emisor-Id', 'X-Admin-Key'],
-    credentials: true,
+    // credentials SOLO se activa cuando los orígenes son explícitos.
+    // Un wildcard con credentials = true es rechazado por los navegadores y
+    // representa una misconfiguración de seguridad crítica.
+    credentials: !isWildcard,
     maxAge: 86400, // Preflight cache: 24h
 }));
 
@@ -61,6 +80,9 @@ app.use(express.json({ limit: '10mb' }));
 
 // Parsear URL-encoded
 app.use(express.urlencoded({ extended: true }));
+
+// Cookie Parser
+app.use(cookieParser());
 
 // Logger de peticiones
 app.use(requestLogger);
@@ -120,12 +142,17 @@ app.get('/health', async (req, res) => {
 // RUTAS API
 // ========================================
 
+// Autenticación SSO Hacienda
+app.use('/api/auth', authRoutes);
+
 // Módulo DTE (rutas públicas + v2 protegidas)
 app.use('/api/dte', dteRoutes);
 
 // Panel de administración IAM (Tenants, Emisores, API Keys)
-// Protegido por X-Admin-Key header + rate limiter
-app.use('/admin', rateLimiter, iamRoutes);
+// SECURITY: rate limiter por IP (no depende de req.tenant) — 30 req/min.
+// Previene brute-force sobre ADMIN_SECRET_KEY independientemente del
+// orden de ejecución de middlewares.
+app.use('/admin', rateLimiterCustom(30, 60_000), iamRoutes);
 
 // ========================================
 // MANEJO DE ERRORES

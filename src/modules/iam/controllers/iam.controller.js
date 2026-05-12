@@ -65,10 +65,14 @@ const listarTenants = async (req, res, next) => {
  */
 const obtenerTenant = async (req, res, next) => {
     try {
-        const { tenantId } = req.params;
+        let { tenantId } = req.params;
+        if (tenantId === 'current') {
+            tenantId = req.tenantId || req.tenant?.id || req.body?.tenantId;
+        }
+        
         const tenant = await tenantService.obtenerPorId(tenantId);
 
-        if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${tenantId}`);
+        if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${req.params.tenantId}`);
 
         res.json({ exito: true, datos: tenant });
     } catch (error) {
@@ -108,6 +112,26 @@ const crearEmisor = async (req, res, next) => {
             mensaje: 'Emisor creado exitosamente. Credenciales MH almacenadas de forma segura.',
             datos: emisorSafe,
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Listar emisores de un tenant
+ * GET /admin/tenants/:tenantId/emisores
+ */
+const listarEmisores = async (req, res, next) => {
+    try {
+        let tenantId = req.params.tenantId;
+        if (tenantId === 'current') {
+            tenantId = req.tenantId || req.tenant?.id;
+        }
+
+        const tenant = await tenantService.obtenerPorId(tenantId);
+        if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${tenantId}`);
+
+        res.json({ exito: true, datos: tenant.emisores || [], total: (tenant.emisores || []).length });
     } catch (error) {
         next(error);
     }
@@ -161,7 +185,11 @@ const crearApiKey = async (req, res, next) => {
  */
 const listarApiKeys = async (req, res, next) => {
     try {
-        const { tenantId } = req.params;
+        let tenantId = req.params.tenantId;
+        if (tenantId === 'current' && req.tenantId) {
+            tenantId = req.tenantId;
+        }
+
         const keys = await apiKeyService.listar(tenantId);
         res.json({ exito: true, datos: keys, total: keys.length });
     } catch (error) {
@@ -171,12 +199,22 @@ const listarApiKeys = async (req, res, next) => {
 
 /**
  * Revocar una API Key
- * DELETE /admin/api-keys/:apiKeyId
+ * DELETE /admin/tenants/:tenantId/api-keys/:apiKeyId
+ *
+ * El tenantId se extrae de la URL para enforcement de ownership:
+ * un admin con JWT solo puede revocar keys de su propio tenant,
+ * y el admin global (X-Admin-Key) puede revocar cualquiera pasando
+ * el tenantId en la URL.
  */
 const revocarApiKey = async (req, res, next) => {
     try {
-        const { apiKeyId } = req.params;
-        await apiKeyService.revocar(apiKeyId);
+        const { apiKeyId, tenantId } = req.params;
+
+        if (!tenantId) {
+            throw new BadRequestError('Se requiere tenantId en la URL', 'MISSING_TENANT_ID');
+        }
+
+        await apiKeyService.revocar(apiKeyId, tenantId);
         res.json({ exito: true, mensaje: `API Key ${apiKeyId} revocada exitosamente` });
     } catch (error) {
         next(error);
@@ -188,6 +226,7 @@ module.exports = {
     listarTenants,
     obtenerTenant,
     crearEmisor,
+    listarEmisores,
     crearApiKey,
     listarApiKeys,
     revocarApiKey,

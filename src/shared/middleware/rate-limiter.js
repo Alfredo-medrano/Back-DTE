@@ -10,6 +10,12 @@ const { TooManyRequestsError } = require('../errors');
 /**
  * Cache de rate limiting en memoria
  * Map<string, { count: number, resetTime: number }>
+ *
+ * ⚠️  LIMITACIÓN: En entornos PM2 cluster (instances > 1), cada proceso
+ * worker tiene su propio Map aislado. El límite efectivo será:
+ *   rateLimit × númeroDeWorkers
+ * Para rate limiting distribuido confiable, migrar a:
+ *   `rate-limiter-flexible` con backend Redis (ioredis).
  */
 const rateLimitCache = new Map();
 

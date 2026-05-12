@@ -8,6 +8,9 @@
 require('dotenv').config();
 
 const config = {
+    // Entorno
+    env: process.env.NODE_ENV || 'development',
+
     // Servidor
     port: process.env.PORT || 3000,
 

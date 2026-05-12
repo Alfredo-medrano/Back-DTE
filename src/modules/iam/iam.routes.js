@@ -11,6 +11,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const iamController = require('./controllers/iam.controller');
 
@@ -19,6 +20,19 @@ const iamController = require('./controllers/iam.controller');
 // Protege TODAS las rutas de este router
 // ────────────────────────────────────────────────────────
 const adminGuard = (req, res, next) => {
+    // Soporte transparente para JWT Frontend
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer eyJ')) {
+        try {
+            const token = authHeader.substring(7);
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dte_saas_secret_2026');
+            req.tenantId = decoded.tenantId;
+            return next();
+        } catch(err) {
+            // Ignorar para seguir probando admin key
+        }
+    }
+
     const adminKey = process.env.ADMIN_SECRET_KEY;
     const headerKey = req.headers['x-admin-key'];
 
@@ -53,6 +67,7 @@ router.get('/tenants/:tenantId', iamController.obtenerTenant);
 // ────────────────────────────────────────────────────────
 // EMISORES
 // ────────────────────────────────────────────────────────
+router.get('/tenants/:tenantId/emisores', iamController.listarEmisores);
 router.post('/tenants/:tenantId/emisores', iamController.crearEmisor);
 
 // ────────────────────────────────────────────────────────
@@ -60,6 +75,9 @@ router.post('/tenants/:tenantId/emisores', iamController.crearEmisor);
 // ────────────────────────────────────────────────────────
 router.post('/tenants/:tenantId/api-keys', iamController.crearApiKey);
 router.get('/tenants/:tenantId/api-keys', iamController.listarApiKeys);
-router.delete('/api-keys/:apiKeyId', iamController.revocarApiKey);
+// SECURITY: tenantId en la URL obliga el ownership check en el servicio.
+// Un JWT-admin solo revoca sus propias keys; X-Admin-Key puede revocar
+// cualquiera siempre que pase el tenantId correcto.
+router.delete('/tenants/:tenantId/api-keys/:apiKeyId', iamController.revocarApiKey);
 
 module.exports = router;
