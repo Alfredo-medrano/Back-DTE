@@ -10,40 +10,84 @@ const { prisma } = require('../../../shared/db');
 const crypto = require('crypto');
 
 // Obtener clave de encriptación del entorno
-const CRYPTO_KEY = process.env.CRYPTO_SECRET_KEY;
-if (!CRYPTO_KEY || CRYPTO_KEY.length < 32) {
+const CRYPTO_SECRET_KEY = process.env.CRYPTO_SECRET_KEY;
+const CRYPTO_SALT = process.env.CRYPTO_SALT;
+
+if (!CRYPTO_SECRET_KEY || CRYPTO_SECRET_KEY.length < 32) {
     console.error('❌ [SECURITY] CRYPTO_SECRET_KEY no está definida o tiene menos de 32 caracteres.');
-    console.error('   Defínela en tu .env: CRYPTO_SECRET_KEY=una_clave_aleatoria_de_al_menos_32_chars');
     process.exit(1);
 }
-const ALGORITHM = 'aes-256-cbc';
+if (!CRYPTO_SALT || CRYPTO_SALT.length < 32) {
+    console.error('❌ [SECURITY] CRYPTO_SALT no está definida o tiene menos de 32 caracteres.');
+    process.exit(1);
+}
+
+// Derivar clave AES-256 con scrypt (una sola vez al arrancar)
+// scrypt previene ataques de fuerza bruta y dict attack sobre la master key
+const GCM_KEY = crypto.scryptSync(
+    CRYPTO_SECRET_KEY,
+    Buffer.from(CRYPTO_SALT, 'hex'),
+    32  // 256 bits
+);
+
+const ALGORITHM_GCM = 'aes-256-gcm';
+// Mantenido solo para desencriptar registros legacy (AES-CBC)
+const ALGORITHM_CBC = 'aes-256-cbc';
 
 /**
- * Encripta un valor sensible
+ * Encripta un valor sensible con AES-256-GCM
+ * Formato de salida: iv_hex:authTag_hex:ciphertext_hex
+ *
+ * GCM incluye autenticación integrada (AEAD), eliminando
+ * la vulnerabilidad de padding oracle presente en AES-CBC.
  */
 const encriptar = (texto) => {
-    const iv = crypto.randomBytes(16);
-    const key = Buffer.from(CRYPTO_KEY.substring(0, 32).padEnd(32, '0'));
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    const iv = crypto.randomBytes(12); // 96 bits recomendado para GCM
+    const cipher = crypto.createCipheriv(ALGORITHM_GCM, GCM_KEY, iv);
     let encrypted = cipher.update(texto, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
+    const authTag = cipher.getAuthTag().toString('hex');
+    // Formato: iv:authTag:ciphertext (3 partes → identifica GCM)
+    return `${iv.toString('hex')}:${authTag}:${encrypted}`;
 };
 
 /**
- * Desencripta un valor sensible
+ * Desencripta un valor sensible.
+ * Soporta tanto GCM (nuevo, 3 partes) como CBC (legacy, 2 partes).
+ * Los registros CBC deben ser migrados con scripts/migrate-encryption.js
  */
 const desencriptar = (textoEncriptado) => {
-    const parts = textoEncriptado.split(':');
-    if (parts.length !== 2) return textoEncriptado; // No está encriptado
+    if (!textoEncriptado) return textoEncriptado;
 
-    const iv = Buffer.from(parts[0], 'hex');
-    const encrypted = parts[1];
-    const key = Buffer.from(CRYPTO_KEY.substring(0, 32).padEnd(32, '0'));
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+    const parts = textoEncriptado.split(':');
+
+    if (parts.length === 3) {
+        // Formato GCM: iv:authTag:ciphertext
+        const iv = Buffer.from(parts[0], 'hex');
+        const authTag = Buffer.from(parts[1], 'hex');
+        const encrypted = parts[2];
+        const decipher = crypto.createDecipheriv(ALGORITHM_GCM, GCM_KEY, iv);
+        decipher.setAuthTag(authTag);
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+    }
+
+    if (parts.length === 2) {
+        // Formato CBC legacy: iv:ciphertext
+        // DEPRECADO — solo para compatibilidad durante migración
+        const iv = Buffer.from(parts[0], 'hex');
+        const encrypted = parts[1];
+        // La clave CBC usaba padEnd(32, '0') — reproducimos solo para descifrar
+        const cbcKey = Buffer.from(CRYPTO_SECRET_KEY.substring(0, 32).padEnd(32, '0'));
+        const decipher = crypto.createDecipheriv(ALGORITHM_CBC, cbcKey, iv);
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+    }
+
+    // No encriptado (ej. valor en texto plano legacy)
+    return textoEncriptado;
 };
 
 /**
