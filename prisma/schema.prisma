@@ -95,7 +95,12 @@ model ApiKey {
   id       String @id @default(uuid())
   tenantId String
 
-  key      String @unique // sk_live_xxxx o sk_test_xxxx
+  // SECURITY: nunca se almacena la key en claro.
+  // keyHash  = SHA-256(rawKey) — usado para lookups.
+  // keyPrefix = primeros 12 chars de rawKey — solo para mostrar al usuario en listados.
+  keyHash   String @unique // SHA-256 hex de la key real
+  keyPrefix String // ej. "sk_test_a3f9" — visible pero no secreto
+
   nombre   String // "Producción", "Desarrollo", etc.
   ambiente String @default("00") // 00=Test, 01=Live
 
