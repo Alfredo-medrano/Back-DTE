@@ -23,7 +23,12 @@ module.exports = {
         {
             name: 'dte-api',
             script: './src/app.js',
-            instances: 'max', // Usa todos los núcleos del CPU
+            // SECURITY NOTE: El rate limiter actual usa un Map en memoria.
+            // Con instances > 1 (cluster), cada worker tiene su propio Map:
+            // el límite real sería rateLimit × núcleoCPU, no rateLimit total.
+            // TODO: Migrar a rate-limiter-flexible con ioredis antes de
+            // aumentar instancias en producción.
+            instances: 1,
             exec_mode: 'cluster',
 
             // Reinicio automático
