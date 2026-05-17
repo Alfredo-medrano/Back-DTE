@@ -34,13 +34,29 @@ const REQUERIDAS = [
         minLength: 32,
         ejemplo: 'Generar con: node -e "console.log(require(\'crypto\').randomBytes(16).toString(\'hex\'))"',
     },
+    {
+        key: 'JWT_SECRET',
+        descripcion: 'Clave secreta para firma de tokens JWT (mín. 32 chars)',
+        minLength: 32,
+        ejemplo: 'Generar con: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"',
+    },
 ];
 
 const OPCIONALES_CON_ADVERTENCIA = [
     {
         key: 'ADMIN_SECRET_KEY',
         descripcion: 'Clave para el panel de administración IAM',
-        aviso: '⚠️  Panel IAM deshabilitado hasta que se configure.',
+        aviso: '⚠️  Panel IAM deshabilitado hasta que se configure ADMIN_SECRET_KEY.',
+    },
+    {
+        key: 'SMTP_HOST',
+        descripcion: 'Servidor SMTP para notificaciones de facturas',
+        aviso: '⚠️  Notificaciones por correo electrónico deshabilitadas (falta SMTP_HOST).',
+    },
+    {
+        key: 'FRONTEND_URL',
+        descripcion: 'URL del frontend para enlaces de representación gráfica',
+        aviso: '⚠️  Enlaces de correos apuntarán a localhost por defecto (falta FRONTEND_URL).',
     },
 ];
 

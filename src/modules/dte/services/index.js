@@ -10,6 +10,7 @@ const dteCalculator = require('./dte-calculator.service');
 const signer = require('./signer.service');
 const mhSender = require('./mh-sender.service');
 const retryQueue = require('./retry-queue.service');
+const emailDelivery = require('./email-delivery.service');
 
 module.exports = {
     dteOrchestrator,
@@ -17,4 +18,6 @@ module.exports = {
     signer,
     mhSender,
     retryQueue,
+    emailDelivery,
 };
+

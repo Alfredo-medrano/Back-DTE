@@ -236,13 +236,38 @@ const estadisticas = async (tenantId, periodo = 'mes') => {
  * Obtiene DTEs pendientes de reintento (para cola de errores)
  */
 const pendientesReintento = async (maxIntentos = 3) => {
-    return await prisma.dte.findMany({
+    return await conReintento('DTE.pendientesReintento', () => prisma.dte.findMany({
         where: {
             status: 'ERROR',
             intentos: { lt: maxIntentos },
         },
         orderBy: { createdAt: 'asc' },
         take: 10,
+    }));
+};
+
+/**
+ * Busca un DTE de forma pública por código de generación
+ * (Para la representación gráfica session-less del receptor)
+ */
+const buscarPorCodigoPublico = async (codigoGeneracion) => {
+    return await prisma.dte.findFirst({
+        where: {
+            codigoGeneracion,
+        },
+        include: {
+            emisor: {
+                select: {
+                    nit: true,
+                    nombre: true,
+                    nombreComercial: true,
+                    correo: true,
+                    telefono: true,
+                    direccion: true,
+                    ambiente: true,
+                }
+            }
+        }
     });
 };
 
@@ -250,6 +275,7 @@ module.exports = {
     crear,
     actualizarEstado,
     buscarPorCodigo,
+    buscarPorCodigoPublico,
     buscarPorNumeroControl,
     listar,
     estadisticas,

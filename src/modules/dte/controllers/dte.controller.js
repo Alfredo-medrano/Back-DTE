@@ -7,7 +7,7 @@
  * USA: req.tenant y req.emisor del middleware tenantContext
  */
 
-const { dteOrchestrator, signer, mhSender } = require('../services');
+const { dteOrchestrator, signer, mhSender, emailDelivery } = require('../services');
 const { dteRepository } = require('../repositories');
 const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { tenantService } = require('../../iam');
@@ -26,19 +26,22 @@ const crearFactura = async (req, res, next) => {
     try {
         // SEGURIDAD: Usar datos validados por Zod en vez de req.body crudo
         const validatedData = req.validatedBody || req.body;
-        const { receptor, items, condicionOperacion, documentoRelacionado } = validatedData;
+        const { receptor, items, condicionOperacion, documentoRelacionado, datosExportacion, observaciones } = validatedData;
         const tipoDte = validatedData.tipoDte || '01';
         const { tenant, emisor } = req;
 
         // Validación de entrada
-        if (!receptor || !items || !Array.isArray(items) || items.length === 0) {
-            throw new BadRequestError('Datos incompletos: receptor e items son requeridos', 'DATOS_INCOMPLETOS');
+        if (!receptor && tipoDte !== '15') {
+            throw new BadRequestError('Datos incompletos: receptor es requerido', 'DATOS_INCOMPLETOS');
+        }
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            throw new BadRequestError('Datos incompletos: items son requeridos', 'DATOS_INCOMPLETOS');
         }
 
-        // NC (DTE-05) requiere documentoRelacionado obligatoriamente
-        if (tipoDte === '05' && !documentoRelacionado) {
+        // NC (DTE-05) y ND (DTE-06) requieren documentoRelacionado obligatoriamente
+        if ((tipoDte === '05' || tipoDte === '06') && !documentoRelacionado) {
             throw new BadRequestError(
-                'documentoRelacionado es obligatorio para Nota de Crédito (DTE-05)',
+                `documentoRelacionado es obligatorio para ${tipoDte === '05' ? 'Nota de Crédito (DTE-05)' : 'Nota de Débito (DTE-06)'}`,
                 'DOCUMENTO_RELACIONADO_REQUERIDO'
             );
         }
@@ -62,6 +65,8 @@ const crearFactura = async (req, res, next) => {
                 correlativo,
                 condicionOperacion: condicionOperacion || 1,
                 documentoRelacionado: documentoRelacionado || null,
+                datosExportacion: datosExportacion || {},
+                observaciones: observaciones || null,
             },
             emisor: emisorConCredenciales,
             tenantId: tenant.id,
@@ -111,12 +116,15 @@ const crearFactura = async (req, res, next) => {
         // ═══════════════════════════════════════
         try {
             if (resultado.exito) {
-                await dteRepository.actualizarEstado(dteId, {
+                const dteActualizado = await dteRepository.actualizarEstado(dteId, {
                     status: 'PROCESADO',
                     selloRecibido: resultado.datos.selloRecibido,
                     fechaProcesamiento: resultado.datos.fechaProcesamiento,
                     jsonFirmado: resultado.documentoFirmado,
                 });
+
+                // Asíncrono (Fire-and-forget) para no impactar la latencia de respuesta
+                emailDelivery.enviarCorreoFactura({ dte: dteActualizado, emisor });
             } else {
                 await dteRepository.actualizarEstado(dteId, {
                     status: 'RECHAZADO',
@@ -233,10 +241,14 @@ const consultarFactura = async (req, res, next) => {
 
         res.json({
             exito: true,
+            dte: dteLocal.jsonOriginal || dteLocal,
             local: {
                 status: dteLocal.status,
                 selloRecibido: dteLocal.selloRecibido,
                 fechaEmision: dteLocal.fechaEmision,
+                numeroControl: dteLocal.numeroControl,
+                observaciones: dteLocal.observaciones,
+                errorLog: dteLocal.errorLog,
             },
             hacienda: resultadoMH.data,
         });
@@ -490,10 +502,47 @@ const anularDTE = async (req, res, next) => {
     }
 };
 
+/**
+ * Consultar DTE de forma pública (session-less)
+ * GET /api/dte/public/factura/:codigoGeneracion
+ */
+const consultarFacturaPublica = async (req, res, next) => {
+    try {
+        const { codigoGeneracion } = req.params;
+
+        if (!codigoGeneracion) {
+            throw new BadRequestError('Se requiere el código de generación');
+        }
+
+        const dteLocal = await dteRepository.buscarPorCodigoPublico(codigoGeneracion);
+
+        if (!dteLocal) {
+            throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
+        }
+
+        res.json({
+            exito: true,
+            dte: dteLocal.jsonOriginal || dteLocal,
+            local: {
+                status: dteLocal.status,
+                selloRecibido: dteLocal.selloRecibido,
+                fechaEmision: dteLocal.fechaEmision,
+                numeroControl: dteLocal.numeroControl,
+                observaciones: dteLocal.observaciones,
+                errorLog: dteLocal.errorLog,
+                emisor: dteLocal.emisor,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     crearFactura,
     listarFacturas,
     consultarFactura,
+    consultarFacturaPublica,
     estadisticas,
     generarEjemplo,
     probarFirma,

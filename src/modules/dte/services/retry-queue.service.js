@@ -9,6 +9,7 @@ const { dteRepository } = require('../repositories');
 const mhSender = require('./mh-sender.service');
 const signerService = require('./signer.service');
 const { tenantService } = require('../../iam');
+const emailDelivery = require('./email-delivery.service');
 const logger = require('../../../shared/logger');
 
 /**
@@ -66,13 +67,17 @@ const procesarReintento = async (dte) => {
         });
 
         if (resultadoMH.exito) {
-            // Actualizar a PROCESADO
-            await dteRepository.actualizarEstado(dte.id, {
+            // Actualizar a PROCESADO y recuperar datos completos actualizados
+            const dteActualizado = await dteRepository.actualizarEstado(dte.id, {
                 status: 'PROCESADO',
                 selloRecibido: resultadoMH.selloRecibido,
                 fechaProcesamiento: resultadoMH.fechaProcesamiento,
                 jsonFirmado: resultadoFirma.firma,
             });
+            
+            // Enviar correo de notificación (asíncrono, fire-and-forget)
+            emailDelivery.enviarCorreoFactura({ dte: dteActualizado, emisor });
+
             logger.info('DTE procesado en reintento', { codigoGeneracion: dte.codigoGeneracion });
             return { exito: true };
         } else {

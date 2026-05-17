@@ -25,6 +25,7 @@ const { checkPlanLimits } = require('../../modules/billing');
 // ========================================
 router.get('/status', statusController.obtenerEstado);
 router.get('/ejemplo', dteController.generarEjemplo);
+router.get('/public/factura/:codigoGeneracion', rateLimiter, dteController.consultarFacturaPublica);
 
 // ========================================
 // RUTAS PROTEGIDAS v2 (requieren API Key)
