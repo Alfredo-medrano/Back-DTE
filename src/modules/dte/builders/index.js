@@ -14,6 +14,7 @@ const ndBuilder = require('./nd.builder');
 const fseBuilder = require('./fse.builder');
 const nrBuilder = require('./nr.builder');
 const fexBuilder = require('./fex.builder');
+const cdBuilder = require('./cd.builder');
 
 /**
  * Mapa de builders por tipo DTE
@@ -26,6 +27,7 @@ const builders = {
     '06': ndBuilder,
     '11': fexBuilder,
     '14': fseBuilder,
+    '15': cdBuilder,
 };
 
 /**
@@ -72,6 +74,7 @@ module.exports = {
     ndBuilder,
     fexBuilder,
     fseBuilder,
+    cdBuilder,
 
     // Helpers
     obtenerBuilder,

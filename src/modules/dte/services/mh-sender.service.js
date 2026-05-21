@@ -10,12 +10,46 @@
 const { mhClient, mhAuthClient } = require('../../../shared/integrations');
 const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker');
 const logger = require('../../../shared/logger');
+const Redis = require('ioredis');
 
-/**
- * Cache de tokens por NIT (Multi-tenant)
- * Map<string, { token: string, expiracion: number }>
- */
-const tokenCache = new Map();
+// Conexión a Redis condicional a la variable de entorno
+const redisUrl = process.env.REDIS_URL;
+let redis;
+
+if (redisUrl) {
+    redis = new Redis(redisUrl, {
+        retryStrategy: (times) => Math.min(times * 50, 2000),
+        maxRetriesPerRequest: 3
+    });
+
+    redis.on('connect', () => logger.info('Redis: Conectado a la caché global DTE'));
+    redis.on('error', (err) => logger.error('Redis cache error', { error: err.message }));
+} else {
+    logger.warn('REDIS_URL no configurado. Usando caché en RAM compartida transitoria (No multi-instancia).');
+    const localMap = new Map();
+    redis = {
+        get: async (key) => {
+            const hit = localMap.get(key);
+            if (hit && hit.expiracion > Date.now()) {
+                return hit.token;
+            }
+            if (hit) localMap.delete(key);
+            return null;
+        },
+        set: async (key, val, mode, ttlSeconds) => {
+            localMap.set(key, { token: val, expiracion: Date.now() + (ttlSeconds * 1000) });
+            return 'OK';
+        },
+        del: async (...keys) => {
+            keys.forEach(k => localMap.delete(k));
+            return keys.length;
+        },
+        keys: async (pattern) => {
+            const prefix = pattern.replace(/\*$/, '');
+            return Array.from(localMap.keys()).filter(k => k.startsWith(prefix));
+        }
+    };
+}
 
 /**
  * Obtiene un token del caché o solicita uno nuevo
@@ -32,13 +66,13 @@ const autenticar = async (credenciales) => {
     }
 
     try {
-        // Verificar token en caché para este NIT específico
-        const cacheKey = nit;
-        const cached = tokenCache.get(cacheKey);
+        // Verificar token en caché global (Redis) para este NIT específico
+        const cacheKey = `dte:token:${nit}`;
+        const cachedToken = await redis.get(cacheKey);
 
-        if (cached && cached.expiracion > Date.now()) {
-            logger.debug('Usando token en caché', { nit });
-            return { exito: true, token: cached.token, mensaje: 'Token en caché válido' };
+        if (cachedToken) {
+            logger.debug('Usando token en caché global', { nit });
+            return { exito: true, token: cachedToken, mensaje: 'Token en caché válido' };
         }
 
         logger.info('Solicitando nuevo token a Hacienda', { nit });
@@ -51,12 +85,12 @@ const autenticar = async (credenciales) => {
 
         if (response.data?.status === 'OK' && response.data?.body?.token) {
             // Guardar en caché con clave única por NIT
-            tokenCache.set(cacheKey, {
-                token: response.data.body.token,
-                expiracion: Date.now() + (23 * 60 * 60 * 1000), // 23 horas
-            });
+            const newToken = response.data.body.token;
+            // MH token expira a las 24 hrs. Lo guardamos 23 horas (82800 seg)
+            await redis.set(cacheKey, newToken, 'EX', 82800);
+            
             logger.info('Token obtenido exitosamente', { nit });
-            return { exito: true, token: response.data.body.token, mensaje: 'Autenticación exitosa' };
+            return { exito: true, token: newToken, mensaje: 'Autenticación exitosa' };
         }
 
         return { exito: false, token: null, error: response.data, mensaje: 'Respuesta inesperada de Hacienda' };
@@ -181,25 +215,30 @@ const anularDTE = async ({ documentoAnulacion, ambiente, credenciales }) => {
 };
 
 /**
- * Limpia el token en caché de un NIT específico
+ * Limpia el token en caché global de un NIT específico
  */
-const limpiarToken = (nit) => {
+const limpiarToken = async (nit) => {
     if (nit) {
-        tokenCache.delete(nit);
-        logger.info('Token limpiado', { nit });
+        await redis.del(`dte:token:${nit}`);
+        logger.info('Token limpiado de Redis', { nit });
     } else {
-        tokenCache.clear();
-        logger.info('Todos los tokens limpiados');
+        // En multi-tenant es peligroso vaciar todo redis, buscar keys dte:token:*
+        const keys = await redis.keys('dte:token:*');
+        if (keys.length > 0) {
+            await redis.del(...keys);
+        }
+        logger.info('Todos los tokens DTE limpiados');
     }
 };
 
 /**
  * Obtiene estadísticas del caché de tokens (debug)
  */
-const estadisticasCache = () => {
+const estadisticasCache = async () => {
+    const keys = await redis.keys('dte:token:*');
     return {
-        tokensActivos: tokenCache.size,
-        nits: Array.from(tokenCache.keys()),
+        tokensActivos: keys.length,
+        nits: keys.map(k => k.split(':')[2])
     };
 };
 

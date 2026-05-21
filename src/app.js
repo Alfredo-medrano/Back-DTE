@@ -10,7 +10,9 @@
  */
 
 require('dotenv').config();
+// Restart
 const { validarEntorno } = require('./config/env-validator');
+// Force restart
 
 // Validar entorno ANTES de inicializar cualquier otra cosa
 validarEntorno();
@@ -24,7 +26,7 @@ const config = require('./config/env');
 const logger = require('./shared/logger');
 
 // Shared Infrastructure
-const { errorHandler, notFoundHandler, requestLogger, rateLimiter } = require('./shared/middleware');
+const { errorHandler, notFoundHandler, requestLogger, rateLimiterCustom } = require('./shared/middleware');
 const { prisma } = require('./shared/db');
 
 // Módulos
@@ -138,6 +140,51 @@ app.get('/health', async (req, res) => {
     }
 });
 
+// Deep health check — ISO 22301 Cláusula 8.4 (DRP)
+// Verifica todos los servicios externos para Plan de Recuperación ante Desastres
+app.get('/health/deep', async (req, res) => {
+    const checks = {
+        database: 'unknown',
+        dockerFirmador: 'unknown',
+        circuitBreakers: {},
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        timestamp: new Date().toISOString(),
+    };
+
+    let allOk = true;
+
+    // 1. Base de datos
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        checks.database = 'connected';
+    } catch {
+        checks.database = 'disconnected';
+        allOk = false;
+    }
+
+    // 2. Docker Firmador
+    try {
+        const axios = require('axios');
+        const resp = await axios.get(`${config.docker.url}/health`, { timeout: 5000 });
+        checks.dockerFirmador = resp.status === 200 ? 'connected' : 'degraded';
+    } catch {
+        checks.dockerFirmador = 'disconnected';
+        allOk = false;
+    }
+
+    // 3. Circuit Breakers
+    try {
+        const { estadoCircuitos } = require('./shared/utils/circuit-breaker');
+        checks.circuitBreakers = estadoCircuitos();
+    } catch {
+        checks.circuitBreakers = { error: 'No disponible' };
+    }
+
+    const status = allOk ? 'OK' : 'DEGRADED';
+    res.status(allOk ? 200 : 503).json({ status, ...checks });
+});
+
 // ========================================
 // RUTAS API
 // ========================================
@@ -205,5 +252,26 @@ const shutdown = async (signal) => {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// ========================================
+// GLOBAL ERROR HANDLERS (ISO 27001 A.12)
+// ========================================
+// Captura errores no manejados para evitar crashes silenciosos.
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Unhandled Promise Rejection', {
+        reason: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+    });
+});
+
+process.on('uncaughtException', (error) => {
+    logger.error('Uncaught Exception — initiating shutdown', {
+        error: error.message,
+        stack: error.stack,
+    });
+    // En excepciones no capturadas, el proceso está en estado indeterminado.
+    // Shutdown graceful para evitar corrupción de datos.
+    shutdown('uncaughtException');
+});
 
 module.exports = app;

@@ -33,13 +33,14 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
 
     // FSE exige el array "pagos" en el resumen. Si el front no lo envía, agregamos un default:
     if (!resumen.pagos) {
+        const esCredito = condicionOperacion === 2;
         resumen.pagos = [
             {
                 codigo: "01", // 01 = Billetes y monedas
                 montoPago: resumen.totalPagar,
                 referencia: null,
-                plazo: null,
-                periodo: null
+                plazo: esCredito ? "01" : null,
+                periodo: esCredito ? 30 : null
             }
         ];
     }

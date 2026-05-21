@@ -25,19 +25,19 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         documentoRelacionado: null,
         emisor: emisorDTE,
         receptor: {
-            tipoDocumento: receptor.tipoDocumento || '36',
-            numDocumento: receptor.numDocumento,
+            tipoDocumento: receptor.tipoDocumento || null,
+            numDocumento: receptor.numDocumento || null,
             nrc: null, // FE no requiere NRC del receptor
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: null,
             descActividad: null,
-            direccion: receptor.direccion ? {
+            direccion: (receptor.direccion && receptor.direccion.complemento && receptor.direccion.complemento.trim().length >= 5) ? {
                 departamento: receptor.direccion.departamento || '06',
                 municipio: receptor.direccion.municipio || '14',
-                complemento: (receptor.direccion.complemento || '').toUpperCase(),
+                complemento: receptor.direccion.complemento.toUpperCase(),
             } : null,
             telefono: receptor.telefono || null,
-            correo: receptor.correo,
+            correo: receptor.correo || null,
         },
         otrosDocumentos: null,
         ventaTercero: null,

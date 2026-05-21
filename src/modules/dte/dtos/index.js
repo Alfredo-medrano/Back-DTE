@@ -13,6 +13,7 @@ const notaDebito = require('./nota-debito.schema');
 const sujetoExcluido = require('./sujeto-excluido.schema');
 const notaRemision = require('./nota-remision.schema');
 const facturaExportacion = require('./factura-exportacion.schema');
+const comprobanteDonacion = require('./comprobante-donacion.schema');
 
 /**
  * Selecciona el validador correcto según tipo de DTE
@@ -26,6 +27,7 @@ const obtenerValidador = (tipoDte) => {
         '06': notaDebito.validarNotaDebito,
         '11': facturaExportacion.validarFEX,
         '14': sujetoExcluido.validarFSE,
+        '15': comprobanteDonacion.validarCD,
     };
 
     return validadores[tipoDte] || null;
@@ -61,6 +63,7 @@ module.exports = {
     sujetoExcluido,
     notaRemision,
     facturaExportacion,
+    comprobanteDonacion,
 
     // Helpers
     obtenerValidador,

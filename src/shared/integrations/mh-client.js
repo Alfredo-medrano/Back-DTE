@@ -27,7 +27,7 @@ const mhClient = axios.create({
  */
 const mhAuthClient = axios.create({
     baseURL: config.mh.authUrl,
-    timeout: config.mh.timeout || 8000,
+    timeout: 15000, // Aumentado a 15s para entornos de prueba lentos
     headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
     },

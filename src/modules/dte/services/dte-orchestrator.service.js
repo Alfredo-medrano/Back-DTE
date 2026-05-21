@@ -31,9 +31,11 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
         correlativo,
         condicionOperacion = 1,
         documentoRelacionado = null,
+        datosExportacion = {},
+        observaciones = null,
     } = datos;
 
-    logger.info(`Construyendo DTE ${tipoDte}`, { tenantId, receptor: receptor.nombre || 'RECEPTOR' });
+    logger.info(`Construyendo DTE ${tipoDte}`, { tenantId, receptor: receptor?.nombre || 'RECEPTOR' });
 
     if (!items || !Array.isArray(items)) {
         throw new Error(`Los items son requeridos y deben ser un array. Recibido: ${typeof items}`);
@@ -49,6 +51,8 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
             correlativo,
             condicionOperacion,
             documentoRelacionado,
+            datosExportacion,
+            observaciones,
         });
     } catch (buildError) {
         throw new Error(`Builder DTE-${tipoDte}: ${buildError.message}`);

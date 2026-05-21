@@ -78,15 +78,15 @@ const construirEmisor = (emisor, tipoDte = '01') => {
         delete base.tipoEstablecimiento;
     }
 
-    // codEstableMH y codPuntoVentaMH: requeridos en CCF-03, NR-04, FEX-11 y FSE-14, prohibidos en NC-05 y ND-06
-    if (['03', '04', '11', '14'].includes(tipoDte)) {
+    // codEstableMH y codPuntoVentaMH: requeridos en la mayoría (01, 03, 04, 11, 14), prohibidos en NC-05 y ND-06
+    if (!['05', '06'].includes(tipoDte)) {
         // MH exige exactamente 4 chars para los códigos MH
         const codMH = (emisor.codEstableMH || 'M001').padStart(4, '0').slice(-4);
         const codPVMH = (emisor.codPuntoVentaMH || 'P001').padStart(4, '0').slice(-4);
         base.codEstableMH = codMH;
-        base.codEstable = emisor.codEstableMH || null;
+        base.codEstable = emisor.codEstable || emisor.codEstableMH || codMH;
         base.codPuntoVentaMH = codPVMH;
-        base.codPuntoVenta = emisor.codPuntoVentaMH || null;
+        base.codPuntoVenta = emisor.codPuntoVenta || emisor.codPuntoVentaMH || codPVMH;
     }
 
     return base;

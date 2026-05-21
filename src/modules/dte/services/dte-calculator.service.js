@@ -71,6 +71,23 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
 
     const tributos = usaTributos ? generarTributosCuerpo(tipoDte) : null;
 
+    // ═══════════════════════════════════════════════════
+    // DTE-15 (CD): estructura completamente diferente —
+    // usa campo "donacion" en lugar de ventaGravada/ivaItem
+    // ═══════════════════════════════════════════════════
+    if (tipoDte === '15') {
+        return {
+            numItem,
+            cantidad: redondear(cantidad, 8),
+            codigo: item.codigo || null,
+            uniMedida,
+            descripcion: (item.descripcion || '').toUpperCase(),
+            precioUni: redondear(precioUni, 2),
+            montoDescu: redondear(descuento, 2),
+            donacion: redondear(montoNeto, 2),
+        };
+    }
+
     // Tipos de DTE donde Hacienda PROHÍBE ivaItem en el detalle
     const sinIvaItem = ['03', '04', '05', '06', '14'].includes(tipoDte);
     // NC/ND (05/06) y FSE (14) prohíben psv y noGravado
@@ -131,6 +148,9 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     lineas.forEach(linea => {
         if (tipoDte === '14') {
             totalGravada += linea.compra || 0;
+        } else if (tipoDte === '15') {
+            // CD: acumular el campo donacion
+            totalGravada += linea.donacion || 0;
         } else {
             totalNoSuj += linea.ventaNoSuj || 0;
             totalExenta += linea.ventaExenta || 0;
@@ -172,8 +192,8 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
             subTotalVentas,
             descuNoSuj: 0.00,
             descuExenta: 0.00,
-            descuGravada: totalDescuento,
-            totalDescu: totalDescuento,
+            descuGravada: 0.00,
+            totalDescu: 0.00,
             tributos: tributosResumen,
             subTotal,
             ivaPerci1: 0.00,
@@ -212,6 +232,18 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     }
 
     // ══════════════════════════════════════════════════════════════
+    // CD (15): resumen único — totalDonado sin IVA
+    // ══════════════════════════════════════════════════════════════
+    if (tipoDte === '15') {
+        const totalDonado = redondear(totalGravada);
+        return {
+            totalDonado,
+            totalDescu: redondear(totalDescuento),
+            observaciones: null,
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // NR (04): resumen simplificado (schema v3)
     // PROHIBIDO: condicionOperacion, pagos, numPagoElectronico,
     //            saldoFavor, totalPagar, totalNoGravado, ivaPerci1, ivaRete1, reteRenta
@@ -225,9 +257,9 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
             subTotalVentas,
             descuNoSuj: 0.00,
             descuExenta: 0.00,
-            descuGravada: totalDescuento,
+            descuGravada: 0.00,
             porcentajeDescuento: 0.00,
-            totalDescu: totalDescuento,
+            totalDescu: 0.00,
             tributos: tributosResumen,
             subTotal,
             montoTotalOperacion,
@@ -255,19 +287,18 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
 
     const totalPagar = redondear(montoTotalOperacion);
 
-    return {
+    const resumenFinal = {
         totalNoSuj,
         totalExenta,
         totalGravada,
         subTotalVentas,
         descuNoSuj: 0.00,
         descuExenta: 0.00,
-        descuGravada: totalDescuento,
+        descuGravada: 0.00,
         porcentajeDescuento: 0.00,
-        totalDescu: totalDescuento,
+        totalDescu: 0.00,
         tributos: tributosResumen,
         subTotal,
-        ivaPerci1: 0.00,
         ivaRete1: 0.00,
         reteRenta,
         montoTotalOperacion,
@@ -280,6 +311,13 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
         pagos: null,
         numPagoElectronico: null,
     };
+    
+    // Percepcion de IVA solo es aplicable/permitida en Credito Fiscal (03)
+    if (tipoDte === '03') {
+        resumenFinal.ivaPerci1 = 0.00;
+    }
+    
+    return resumenFinal;
 };
 
 /**

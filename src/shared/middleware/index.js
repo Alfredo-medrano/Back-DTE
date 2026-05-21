@@ -9,6 +9,7 @@ const { requestLogger } = require('./request-logger');
 const { tenantContext, requierePermisos } = require('./tenant-context');
 const { validateSchema, validateDTE } = require('./validate-dto');
 const { rateLimiter, rateLimiterCustom } = require('./rate-limiter');
+const { auditLog, auditMiddleware } = require('./audit-logger');
 
 /**
  * Manejador de rutas no encontradas
@@ -40,4 +41,8 @@ module.exports = {
     // Rate Limiting
     rateLimiter,
     rateLimiterCustom,
+
+    // Audit
+    auditLog,
+    auditMiddleware,
 };

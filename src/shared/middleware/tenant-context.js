@@ -6,9 +6,11 @@
  * Este es el "portero" del sistema multi-tenant
  */
 
+const jwt = require('jsonwebtoken');
 const { apiKeyService } = require('../../modules/iam/services');
 const { UnauthorizedError, ForbiddenError } = require('../errors');
 const logger = require('../logger');
+const { prisma } = require('../db');
 
 /**
  * Middleware para inyectar contexto del tenant en cada request
@@ -16,23 +18,60 @@ const logger = require('../logger');
  */
 const tenantContext = async (req, res, next) => {
     try {
-        // Extraer token del header
-        const authHeader = req.headers.authorization;
+        console.log('--- tenantContext ---');
+        console.log('Headers:', req.headers);
+        console.log('Cookies:', req.cookies);
 
-        if (!authHeader) {
-            throw new UnauthorizedError('API Key requerida', 'NO_API_KEY');
+        // Extraer token de cookie o del header Authorization
+        let apiKey = req.cookies?.dte_api_key;
+        
+        if (!apiKey) {
+            const authHeader = req.headers.authorization;
+            if (authHeader) {
+                if (authHeader.startsWith('Bearer ')) {
+                    apiKey = authHeader.substring(7);
+                } else {
+                    apiKey = authHeader;
+                }
+            }
         }
 
-        // Soportar "Bearer sk_xxx" o solo "sk_xxx"
-        let apiKey;
-        if (authHeader.startsWith('Bearer ')) {
-            apiKey = authHeader.substring(7);
+        if (!apiKey) {
+            throw new UnauthorizedError('API Key o Cookie requerida', 'NO_API_KEY');
+        }
+
+        // Identificador si es JWT o API Key
+        let contexto;
+
+        // Si parece un token JWT (eyJ...)
+        if (apiKey.startsWith('eyJ')) {
+            try {
+                const decoded = jwt.verify(apiKey, process.env.JWT_SECRET);
+                
+                // Buscar el emisor en prisma para reconstruir el "contexto" emulado
+                const emisor = await prisma.emisor.findUnique({
+                    where: { id: decoded.emisorId },
+                    include: { tenant: true }
+                });
+
+                if (!emisor || emisor.tenantId !== decoded.tenantId) {
+                    throw new Error('Token huérfano');
+                }
+
+                contexto = {
+                    tenant: emisor.tenant,
+                    emisores: [emisor],
+                    ambiente: emisor.ambiente,
+                    permisos: ['dte:create', 'dte:read', 'admin:read'], // Permisos por defecto para UI
+                    rateLimit: 1000 // UI sin limitación estricta
+                };
+            } catch (err) {
+                throw new UnauthorizedError('JWT Token inválido o expirado', 'INVALID_JWT');
+            }
         } else {
-            apiKey = authHeader;
+            // Validar API Key normal
+            contexto = await apiKeyService.validar(apiKey);
         }
-
-        // Validar API Key
-        const contexto = await apiKeyService.validar(apiKey);
 
         if (!contexto) {
             throw new UnauthorizedError('API Key inválida o desactivada', 'INVALID_API_KEY');
@@ -54,10 +93,10 @@ const tenantContext = async (req, res, next) => {
         };
 
         // Inyectar emisor por defecto (el primero activo)
-        // El cliente puede especificar otro con header X-Emisor-Id
-        const emisorIdHeader = req.headers['x-emisor-id'];
-        if (emisorIdHeader) {
-            const emisorSeleccionado = contexto.emisores.find(e => e.id === emisorIdHeader);
+        // El cliente puede especificar otro con header X-Emisor-Id o cookie dte_emisor_id
+        const emisorIdParam = req.headers['x-emisor-id'] || req.cookies?.dte_emisor_id;
+        if (emisorIdParam) {
+            const emisorSeleccionado = contexto.emisores.find(e => e.id === emisorIdParam);
             if (!emisorSeleccionado) {
                 throw new ForbiddenError('Emisor no encontrado o no pertenece al tenant', 'INVALID_EMISOR');
             }

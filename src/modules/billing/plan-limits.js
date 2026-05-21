@@ -82,8 +82,15 @@ const checkPlanLimits = async (req, res, next) => {
         next();
     } catch (error) {
         logger.error('Error checking plan limits', { error: error.message });
-        // En caso de fallo del check, dejar pasar (fail-open)
-        // para no bloquear facturación por error de infraestructura
+        // ISO 9001 8.5 — En producción: fail-closed para evitar bypass de cuotas.
+        // En desarrollo: fail-open para no bloquear el flujo de testing.
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(503).json({
+                exito: false,
+                codigo: 'BILLING_CHECK_FAILED',
+                mensaje: 'No se pudo verificar el límite de tu plan. Intenta de nuevo en unos segundos.',
+            });
+        }
         next();
     }
 };

@@ -64,8 +64,9 @@ const direccionSchema = z.object({
     departamento: departamentoSchema.default('06'),
     municipio: municipioSchema.default('14'),
     complemento: z.string()
-        .min(1, 'Complemento de dirección requerido')
-        .max(200, 'Complemento máximo 200 caracteres'),
+        .max(200, 'Complemento máximo 200 caracteres')
+        .optional()
+        .or(z.literal('')),
 });
 
 // ========================================
