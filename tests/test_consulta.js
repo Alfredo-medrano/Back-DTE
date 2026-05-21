@@ -7,9 +7,15 @@
  */
 
 const { printHeader, printPass, printFail, printInfo, saveLog } = require('./test_utils');
-const servicioMH = require('../src/services/servicioMH');
+const servicioMH = require('../src/modules/dte/services/mh-sender.service');
 const fs = require('fs');
 const path = require('path');
+const config = require('../src/config/env');
+
+const credencialesPrueba = {
+    nit: config.emisor.nit || '070048272',
+    claveApi: config.mh.claveApi,
+};
 
 /**
  * Obtiene códigos de generación de logs exitosos previos
@@ -22,7 +28,14 @@ const obtenerCodigosDeLogsExitosos = () => {
     }
 
     const archivos = fs.readdirSync(logsPath);
-    const archivosExito = archivos.filter(f => f.startsWith('exito_') && f.endsWith('.json'));
+    const archivosExito = archivos
+        .filter(f => f.startsWith('exito_') && f.endsWith('.json'))
+        .map(f => ({
+            name: f,
+            time: fs.statSync(path.join(logsPath, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time)
+        .map(f => f.name);
 
     const codigos = [];
 
@@ -47,11 +60,15 @@ const obtenerCodigosDeLogsExitosos = () => {
 /**
  * Consulta el estado de un DTE
  */
-const consultarEstadoDTE = async (codigoGeneracion) => {
-    printInfo('CONSULTA', `Consultando estado de: ${codigoGeneracion}`);
+const consultarEstadoDTE = async (codigoGeneracion, tipoDte) => {
+    printInfo('CONSULTA', `Consultando estado de: ${codigoGeneracion} (Tipo: ${tipoDte})`);
 
     try {
-        const resultado = await servicioMH.consultarEstado(codigoGeneracion);
+        const resultado = await servicioMH.consultarEstado({
+            codigoGeneracion,
+            tdte: tipoDte,
+            credenciales: credencialesPrueba
+        });
 
         if (resultado.exito) {
             printPass('Consulta exitosa');
@@ -78,7 +95,7 @@ const ejecutarPruebasConsulta = async () => {
     try {
         // Autenticar
         printInfo('AUTH', 'Autenticando con MH...');
-        const auth = await servicioMH.autenticar();
+        const auth = await servicioMH.autenticar(credencialesPrueba);
         if (!auth.exito) {
             throw new Error('Fallo de autenticación');
         }
@@ -101,7 +118,7 @@ const ejecutarPruebasConsulta = async () => {
         for (let i = 0; i < Math.min(codigos.length, 5); i++) { // Máximo 5 consultas
             const item = codigos[i];
             console.log(`\n--- Consulta ${i + 1}/${Math.min(codigos.length, 5)} ---`);
-            const data = await consultarEstadoDTE(item.codigo);
+            const data = await consultarEstadoDTE(item.codigo, item.tipo);
 
             resultados.push({
                 codigo: item.codigo,

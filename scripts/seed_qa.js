@@ -114,6 +114,8 @@ ${C.BRIGHT}╔══════════════════════
         log.header('2. Creando Tenant A (cliente legítimo)...');
 
         const keyA = generarApiKey();
+        const keyHashA = crypto.createHash('sha256').update(keyA).digest('hex');
+        const keyPrefixA = keyA.substring(0, 16);
         const timestamp = Date.now();
 
         const tenantA = await prisma.tenant.create({
@@ -123,7 +125,8 @@ ${C.BRIGHT}╔══════════════════════
                 plan: 'PROFESIONAL',
                 apiKeys: {
                     create: {
-                        key: keyA,
+                        keyHash: keyHashA,
+                        keyPrefix: keyPrefixA,
                         nombre: `${QA_PREFIX}Key_A`,
                         permisos: ['dte:create', 'dte:read', 'dte:invalidate'],
                         rateLimit: 100, // Límite estándar
@@ -168,6 +171,8 @@ ${C.BRIGHT}╔══════════════════════
         log.header('3. Creando Tenant B (simula atacante)...');
 
         const keyB = generarApiKey();
+        const keyHashB = crypto.createHash('sha256').update(keyB).digest('hex');
+        const keyPrefixB = keyB.substring(0, 16);
 
         const tenantB = await prisma.tenant.create({
             data: {
@@ -176,7 +181,8 @@ ${C.BRIGHT}╔══════════════════════
                 plan: 'BASICO',
                 apiKeys: {
                     create: {
-                        key: keyB,
+                        keyHash: keyHashB,
+                        keyPrefix: keyPrefixB,
                         nombre: `${QA_PREFIX}Key_B`,
                         permisos: ['dte:create', 'dte:read'],
                         rateLimit: 5, // ⚠️ Límite MUY BAJO para probar rate limiting

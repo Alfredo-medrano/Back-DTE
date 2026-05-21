@@ -18,10 +18,6 @@ const { prisma } = require('../db');
  */
 const tenantContext = async (req, res, next) => {
     try {
-        console.log('--- tenantContext ---');
-        console.log('Headers:', req.headers);
-        console.log('Cookies:', req.cookies);
-
         // Extraer token de cookie o del header Authorization
         let apiKey = req.cookies?.dte_api_key;
         

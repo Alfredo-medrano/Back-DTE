@@ -125,6 +125,12 @@ const crearFactura = async (req, res, next) => {
 
                 // Asíncrono (Fire-and-forget) para no impactar la latencia de respuesta
                 emailDelivery.enviarCorreoFactura({ dte: dteActualizado, emisor });
+            } else if (resultado.esErrorComunicacion) {
+                await dteRepository.actualizarEstado(dteId, {
+                    status: 'ERROR',
+                    observaciones: 'Fallo de comunicación/Hacienda caída. Encolado para reintento automático.',
+                    errorLog: JSON.stringify(resultado.error || resultado.detalle || resultado.mensaje),
+                });
             } else {
                 await dteRepository.actualizarEstado(dteId, {
                     status: 'RECHAZADO',
@@ -149,6 +155,13 @@ const crearFactura = async (req, res, next) => {
                 exito: true,
                 mensaje: 'Factura procesada exitosamente',
                 datos: resultado.datos,
+            });
+        } else if (resultado.esErrorComunicacion) {
+            res.status(202).json({
+                exito: true,
+                enCola: true,
+                mensaje: 'Guardada y en cola de envío',
+                codigoGeneracion: documentoDTE.identificacion.codigoGeneracion,
             });
         } else {
             res.status(400).json({
@@ -233,6 +246,7 @@ const consultarFactura = async (req, res, next) => {
         // Consultar en Hacienda
         const resultadoMH = await mhSender.consultarEstado({
             codigoGeneracion,
+            tdte: dteLocal.tipoDte,
             credenciales: {
                 nit: emisorConCredenciales.nit,
                 claveApi: emisorConCredenciales.mhClaveApi,

@@ -15,20 +15,71 @@
  */
 
 const { printHeader, printPass, printFail, printInfo, saveLog } = require('./test_utils');
-const servicioDocker = require('../src/services/servicioDocker');
-const servicioMH = require('../src/services/servicioMH');
+const servicioDocker = require('../src/modules/dte/services/signer.service');
+const servicioMH = require('../src/modules/dte/services/mh-sender.service');
 const {
     generarCodigoGeneracion,
     generarNumeroControl,
+} = require('../src/shared/utils/uuid-generator');
+const {
     generarFechaActual,
     generarHoraEmision
-} = require('../src/utils/generadorUUID');
+} = require('../src/shared/utils/date-formatter');
 const {
     calcularLineaProducto,
     calcularResumenFactura
-} = require('../src/utils/calculadorIVA');
+} = require('../src/modules/dte/services/dte-calculator.service');
 const config = require('../src/config/env');
+
+const credencialesPrueba = {
+    nit: config.emisor.nit || '070048272',
+    claveApi: config.mh.claveApi,
+};
 const dataGenerator = require('./data_generator');
+
+const generarNumeroControlUnico = (tipoDte) => {
+    const timestamp = Date.now().toString().slice(-12);
+    const random    = Math.floor(Math.random() * 999).toString().padStart(3, '0');
+    return generarNumeroControl(tipoDte, 'M001P001', parseInt(`${timestamp}${random}`));
+};
+
+const getEmisorReal = () => ({
+    nit:              credencialesPrueba.nit,
+    nrc:              '3799647',
+    nombre:           'ALFREDO EZEQUIEL MEDRANO MARTINEZ',
+    codActividad:     '62010',
+    descActividad:    'PROGRAMACION INFORMATICA',
+    nombreComercial:  'ALFREDO MEDRANO',
+    tipoEstablecimiento: '01',
+    direccion: {
+        departamento: '14',
+        municipio:    '04',
+        complemento:  'CANTON EL PILON, CONCHAGUA',
+    },
+    telefono:        '22222222',
+    correo:          'test@test.com',
+    codEstableMH:    'M001',
+    codEstable:      'M001',
+    codPuntoVentaMH: 'P001',
+    codPuntoVenta:   'P001',
+});
+
+const construirIdentificacion = (tipoDte, numeroControl, codigoGeneracion) => {
+    return {
+        version:          1,
+        ambiente:         config.emisor.ambiente,
+        tipoDte,
+        numeroControl,
+        codigoGeneracion,
+        tipoModelo:       1,
+        tipoOperacion:    1,
+        tipoContingencia: null,
+        motivoContin:     null,
+        fecEmi:           generarFechaActual(),
+        horEmi:           generarHoraEmision(),
+        tipoMoneda:       'USD',
+    };
+};
 
 /**
  * Genera un DTE simple para luego invalidar
@@ -38,72 +89,46 @@ const generarDTEParaInvalidar = async () => {
 
     try {
         const codigoGeneracion = generarCodigoGeneracion();
-        const numeroControl = generarNumeroControl('01', 'INVALID01', 1);
+        const numeroControl = generarNumeroControlUnico('01');
 
-        const emisor = dataGenerator.generarEmisor(config.emisor.nit);
+        const emisor = getEmisorReal();
         const receptor = dataGenerator.generarReceptor('36');
+        const items = dataGenerator.generarItems(1);
 
-        const item = {
-            numItem: 1,
-            tipoItem: 2,
-            cantidad: 1,
-            codigo: 'SRV-001',
-            descripcion: 'SERVICIO DE PRUEBA PARA INVALIDAR',
-            precioUni: 100.00,
-            montoDescu: 0,
-            ventaNoSuj: 0,
-            ventaExenta: 0,
-            ventaGravada: 100.00,
-            uniMedida: 99,
-        };
-
-        const cuerpoDocumento = [calcularLineaProducto(item, 1, '01')];
-        const resumen = calcularResumenFactura(cuerpoDocumento, 1);
+        const cuerpoDocumento = items.map((item, index) => calcularLineaProducto(item, index + 1, '01'));
+        const resumen = calcularResumenFactura(cuerpoDocumento, 1, '01');
+        delete resumen.ivaPerci1;
 
         const documentoDTE = {
-            identificacion: {
-                version: 1,
-                ambiente: config.emisor.ambiente,
-                tipoDte: '01',
-                numeroControl: numeroControl,
-                codigoGeneracion: codigoGeneracion,
-                tipoModelo: 1,
-                tipoOperacion: 1,
-                fecEmi: generarFechaActual(),
-                horEmi: generarHoraEmision(),
-                tipoMoneda: 'USD',
-            },
-            emisor: {
-                nit: emisor.nit,
-                nrc: emisor.nrc,
-                nombre: emisor.nombre,
-                codActividad: emisor.codActividad,
-                descActividad: emisor.descActividad,
-                nombreComercial: emisor.nombreComercial,
-                tipoEstablecimiento: '01',
-                direccion: emisor.direccion,
-                telefono: emisor.telefono,
-                correo: emisor.correo,
-            },
+            identificacion: construirIdentificacion('01', numeroControl, codigoGeneracion),
+            documentoRelacionado: null,
+            emisor,
             receptor: {
-                tipoDocumento: receptor.tipoDocumento,
-                numDocumento: receptor.numDocumento,
-                nombre: receptor.nombre,
-                direccion: receptor.direccion,
-                telefono: receptor.telefono,
-                correo: receptor.correo,
+                tipoDocumento: '36',
+                numDocumento:  '06142803901121',
+                nombre:        'CLIENTE CONSUMIDOR FINAL',
+                nrc:           null,
+                codActividad:  null,
+                descActividad: null,
+                direccion:     receptor.direccion,
+                telefono:      receptor.telefono,
+                correo:        receptor.correo,
             },
-            cuerpoDocumento: cuerpoDocumento,
-            resumen: resumen,
+            otrosDocumentos: null,
+            ventaTercero:    null,
+            cuerpoDocumento,
+            resumen,
+            extension: null,
+            apendice:  null,
         };
 
         // Firmar
         printInfo('FIRMA', 'Firmando DTE original...');
-        const resultadoFirma = await servicioDocker.firmarDocumento(
-            documentoDTE,
-            config.emisor.nit,
-            config.mh.clavePrivada
-        );
+        const resultadoFirma = await servicioDocker.firmarDocumento({
+            documento: documentoDTE,
+            nit: credencialesPrueba.nit,
+            clavePrivada: config.mh.clavePrivada
+        });
 
         if (!resultadoFirma.exito) {
             throw new Error(`Fallo al firmar: ${resultadoFirma.error}`);
@@ -112,12 +137,14 @@ const generarDTEParaInvalidar = async () => {
 
         // Enviar
         printInfo('ENVÍO', 'Enviando DTE original a MH...');
-        const resultadoMH = await servicioMH.enviarDTE(
-            resultadoFirma.firma,
-            config.emisor.ambiente,
-            '01',
-            1
-        );
+        const resultadoMH = await servicioMH.enviarDTE({
+            documentoFirmado: resultadoFirma.firma,
+            ambiente: config.emisor.ambiente,
+            tipoDte: '01',
+            version: 1,
+            codigoGeneracion,
+            credenciales: credencialesPrueba
+        });
 
         if (!resultadoMH.exito) {
             throw new Error(`DTE rechazado: ${JSON.stringify(resultadoMH.observaciones || resultadoMH.error)}`);
@@ -149,9 +176,7 @@ const invalidarDTE = async (dteOriginal) => {
 
     try {
         const codigoGeneracion = generarCodigoGeneracion();
-        const numeroControl = generarNumeroControl('07', 'ANULA001', 1); // Tipo 07 = Invalidación
-
-        const emisor = dataGenerator.generarEmisor(config.emisor.nit);
+        const emisor = getEmisorReal();
 
         // Documento de invalidación
         const documentoInvalidacion = {
@@ -168,6 +193,9 @@ const invalidarDTE = async (dteOriginal) => {
                 tipoEstablecimiento: '01',
                 telefono: emisor.telefono,
                 correo: emisor.correo,
+                codEstable: emisor.codEstable || 'M001',
+                codPuntoVenta: emisor.codPuntoVenta || 'P001',
+                nomEstablecimiento: emisor.nombreComercial || 'ALFREDO MEDRANO',
             },
             documento: {
                 tipoDte: dteOriginal.tipoDte,
@@ -175,16 +203,16 @@ const invalidarDTE = async (dteOriginal) => {
                 selloRecibido: dteOriginal.selloRecibido,
                 numeroControl: dteOriginal.numeroControl,
                 fecEmi: dteOriginal.fechaEmision,
-                montoIva: 0, // Calculado según DTE original
-                codigoGeneracionR: null, // Si hubo reemplazo
-                tipoDocumento: null,
-                numDocumento: null,
-                nombre: null,
-                telefono: null,
-                correo: null,
+                montoIva: 0.00,
+                tipoDocumento: '36',
+                numDocumento: '06142803901121',
+                nombre: 'CLIENTE CONSUMIDOR FINAL',
+                telefono: '22222222',
+                correo: 'test@test.com',
+                codigoGeneracionR: null,
             },
             motivo: {
-                tipoAnulacion: 1, // 1=Anulación por error, 2=Por reemplazo, etc.
+                tipoAnulacion: 2, // 2 = Anulación por reemplazo (requiere codigoGeneracionR: null según schema v2)
                 motivoAnulacion: 'DOCUMENTO DE PRUEBA - INVALIDACION REQUERIDA POR SISTEMA DE CERTIFICACION',
                 nombreResponsable: emisor.nombre,
                 tipDocResponsable: '36',
@@ -200,11 +228,11 @@ const invalidarDTE = async (dteOriginal) => {
 
         // Firmar invalidación
         printInfo('FIRMA', 'Firmando documento de invalidación...');
-        const resultadoFirma = await servicioDocker.firmarAnulacion(
-            documentoInvalidacion,
-            config.emisor.nit,
-            config.mh.clavePrivada
-        );
+        const resultadoFirma = await servicioDocker.firmarAnulacion({
+            documento: documentoInvalidacion,
+            nit: credencialesPrueba.nit,
+            clavePrivada: config.mh.clavePrivada
+        });
 
         if (!resultadoFirma.exito) {
             throw new Error(`Fallo al firmar invalidación: ${resultadoFirma.error}`);
@@ -213,7 +241,11 @@ const invalidarDTE = async (dteOriginal) => {
 
         // Enviar invalidación
         printInfo('ENVÍO', 'Enviando invalidación a MH...');
-        const resultadoMH = await servicioMH.anularDTE(resultadoFirma.firma);
+        const resultadoMH = await servicioMH.anularDTE({
+            documentoAnulacion: resultadoFirma.firma,
+            ambiente: config.emisor.ambiente,
+            credenciales: credencialesPrueba
+        });
 
         if (resultadoMH.exito) {
             printPass('¡INVALIDACIÓN ACEPTADA POR HACIENDA!');
@@ -223,10 +255,10 @@ const invalidarDTE = async (dteOriginal) => {
             });
             return true;
         } else {
-            printFail('Invalidación rechazada', resultadoMH.data);
+            printFail('Invalidación rechazada', resultadoMH.error || resultadoMH.data);
             saveLog(`invalidacion_error_${codigoGeneracion}.json`, {
                 dteOriginal,
-                error: resultadoMH.data,
+                error: resultadoMH.error || resultadoMH.data,
             });
             return false;
         }
@@ -246,7 +278,7 @@ const ejecutarPruebaInvalidacion = async () => {
     try {
         // Autenticar primero
         printInfo('AUTH', 'Autenticando con MH...');
-        const auth = await servicioMH.autenticar();
+        const auth = await servicioMH.autenticar(credencialesPrueba);
         if (!auth.exito) {
             throw new Error('Fallo de autenticación');
         }

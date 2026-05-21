@@ -153,7 +153,7 @@ ${C.BRIGHT}╔══════════════════════
     log.step(1, 'Verificando servidor API...');
 
     try {
-        const healthRes = await apiRequest('/api/status');
+        const healthRes = await apiRequest('/api/dte/status');
         if (!healthRes.ok) {
             throw new Error(`Status: ${healthRes.status}`);
         }

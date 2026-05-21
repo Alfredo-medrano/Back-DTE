@@ -108,7 +108,7 @@ ${C.BRIGHT}╔══════════════════════
     log.step(1, 'Verificando servidor API...');
 
     try {
-        const healthRes = await fetch(`${API_BASE}/api/status`);
+        const healthRes = await fetch(`${API_BASE}/api/dte/status`);
         if (!healthRes.ok) {
             throw new Error(`Status: ${healthRes.status}`);
         }

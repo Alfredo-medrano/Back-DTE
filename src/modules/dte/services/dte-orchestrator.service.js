@@ -85,6 +85,8 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
             paso: 'FIRMA',
             error: 'Error al firmar documento',
             detalle: resultadoFirma.error,
+            esErrorComunicacion: true,
+            mensaje: 'Error al firmar documento',
         };
     }
 
@@ -102,6 +104,16 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
         },
     });
 
+    const esErrorComunicacion = resultadoMH.mensaje === 'Error de comunicación' || 
+                               resultadoMH.mensaje === 'No se pudo obtener token' || 
+                               resultadoMH.mensaje === 'Error al autenticar' ||
+                               (resultadoMH.error && (
+                                   (typeof resultadoMH.error.message === 'string' && resultadoMH.error.message.includes('timeout')) ||
+                                   (typeof resultadoMH.error.message === 'string' && resultadoMH.error.message.includes('Network')) ||
+                                   resultadoMH.error.code === 'ECONNREFUSED' ||
+                                   resultadoMH.error.code === 'ETIMEDOUT'
+                               ));
+
     return {
         exito: resultadoMH.exito,
         paso: resultadoMH.exito ? 'PROCESADO' : 'RECHAZADO',
@@ -115,6 +127,8 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
         error: resultadoMH.exito ? null : resultadoMH.error,
         observaciones: resultadoMH.observaciones,
         documentoFirmado: resultadoFirma.firma,
+        mensaje: resultadoMH.mensaje,
+        esErrorComunicacion,
     };
 };
 

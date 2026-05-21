@@ -6,24 +6,24 @@
  * Cálculos fiscales según normativa salvadoreña (Anexo II)
  * 
  * Migrado desde: src/utils/calculadorIVA.js
- */
-
-const {
+ */const {
     obtenerConfigDTE,
     generarTributosCuerpo,
     generarTributosResumen,
     IVA_RATE,
 } = require('../constants');
 
+const Decimal = require('decimal.js');
+
 /**
- * Redondea a N decimales (regla fiscal)
- * @param {number} valor - Valor a redondear
+ * Redondea a N decimales (regla fiscal) usando decimal.js
+ * @param {number|Decimal} valor - Valor a redondear
  * @param {number} decimales - Número de decimales (default: 2)
  * @returns {number} Valor redondeado
  */
 const redondear = (valor, decimales = 2) => {
-    const factor = Math.pow(10, decimales);
-    return Math.round(valor * factor) / factor;
+    if (valor === undefined || valor === null) return 0;
+    return new Decimal(valor).toDecimalPlaces(decimales, Decimal.ROUND_HALF_UP).toNumber();
 };
 
 /**
@@ -40,27 +40,28 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
     const usaTributos = configDte ? configDte.usaTributos : false;
 
-    const cantidad = parseFloat(item.cantidad);
-    const precioUnitario = parseFloat(item.precioUnitario || item.precioUni);
-    const descuento = parseFloat(item.descuento || item.montoDescu || 0);
+    const cantidad = new Decimal(item.cantidad || 0);
+    const precioUnitario = new Decimal(item.precioUnitario || item.precioUni || 0);
+    const descuento = new Decimal(item.descuento || item.montoDescu || 0);
 
-    const montoBruto = cantidad * precioUnitario;
-    const montoNeto = montoBruto - descuento;
+    const montoBruto = cantidad.mul(precioUnitario);
+    const montoNeto = montoBruto.sub(descuento);
 
     let precioUni, ventaGravada, ivaItem;
 
     if (precioIncluyeIva) {
         precioUni = precioUnitario;
-        ventaGravada = redondear(montoNeto, 2);
-        ivaItem = redondear(montoNeto / (1 + IVA_RATE) * IVA_RATE, 2);
+        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const divisor = new Decimal(1).add(IVA_RATE);
+        ivaItem = montoNeto.div(divisor).mul(IVA_RATE).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     } else if (tipoDte === '14' || tipoDte === '11') {
         precioUni = precioUnitario;
-        ventaGravada = redondear(montoNeto, 2);
-        ivaItem = 0.00;
+        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        ivaItem = new Decimal(0);
     } else {
         precioUni = precioUnitario;
-        ventaGravada = redondear(montoNeto, 2);
-        ivaItem = redondear(montoNeto * IVA_RATE, 2);
+        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        ivaItem = montoNeto.mul(IVA_RATE).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     }
 
     let uniMedida = 59;
@@ -78,13 +79,13 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     if (tipoDte === '15') {
         return {
             numItem,
-            cantidad: redondear(cantidad, 8),
+            cantidad: cantidad.toDecimalPlaces(8, Decimal.ROUND_HALF_UP).toNumber(),
             codigo: item.codigo || null,
             uniMedida,
             descripcion: (item.descripcion || '').toUpperCase(),
-            precioUni: redondear(precioUni, 2),
-            montoDescu: redondear(descuento, 2),
-            donacion: redondear(montoNeto, 2),
+            precioUni: precioUni.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+            montoDescu: descuento.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+            donacion: montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
         };
     }
 
@@ -99,21 +100,21 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         numItem,
         tipoItem,
         numeroDocumento,
-        cantidad: redondear(cantidad, 8),
+        cantidad: cantidad.toDecimalPlaces(8, Decimal.ROUND_HALF_UP).toNumber(),
         codigo: item.codigo || null,
         codTributo: null,
         uniMedida,
         descripcion: (item.descripcion || '').toUpperCase(),
-        precioUni: redondear(precioUni, 2),
-        montoDescu: redondear(descuento, 2),
+        precioUni: precioUni.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+        montoDescu: descuento.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
     };
 
     if (tipoDte === '14') {
-        linea.compra = ventaGravada;
+        linea.compra = ventaGravada.toNumber();
     } else {
         linea.ventaNoSuj = 0.00;
         linea.ventaExenta = 0.00;
-        linea.ventaGravada = ventaGravada;
+        linea.ventaGravada = ventaGravada.toNumber();
         linea.tributos = tributos;
     }
 
@@ -125,7 +126,7 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
 
     // ivaItem: solo en FE-01 (y similares que incluyen precio con IVA)
     if (!sinIvaItem) {
-        linea.ivaItem = ivaItem;
+        linea.ivaItem = ivaItem.toNumber();
     }
 
     return linea;
@@ -143,39 +144,43 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
     const usaTributos = configDte ? configDte.usaTributos : false;
 
-    let totalNoSuj = 0, totalExenta = 0, totalGravada = 0, totalDescuento = 0, totalIva = 0;
+    let totalNoSuj = new Decimal(0);
+    let totalExenta = new Decimal(0);
+    let totalGravada = new Decimal(0);
+    let totalDescuento = new Decimal(0);
+    let totalIva = new Decimal(0);
 
     lineas.forEach(linea => {
         if (tipoDte === '14') {
-            totalGravada += linea.compra || 0;
+            totalGravada = totalGravada.add(linea.compra || 0);
         } else if (tipoDte === '15') {
             // CD: acumular el campo donacion
-            totalGravada += linea.donacion || 0;
+            totalGravada = totalGravada.add(linea.donacion || 0);
         } else {
-            totalNoSuj += linea.ventaNoSuj || 0;
-            totalExenta += linea.ventaExenta || 0;
-            totalGravada += linea.ventaGravada || 0;
-            totalIva += linea.ivaItem || 0;
+            totalNoSuj = totalNoSuj.add(linea.ventaNoSuj || 0);
+            totalExenta = totalExenta.add(linea.ventaExenta || 0);
+            totalGravada = totalGravada.add(linea.ventaGravada || 0);
+            totalIva = totalIva.add(linea.ivaItem || 0);
         }
-        totalDescuento += linea.montoDescu || 0;
+        totalDescuento = totalDescuento.add(linea.montoDescu || 0);
     });
 
-    totalNoSuj = redondear(totalNoSuj);
-    totalExenta = redondear(totalExenta);
-    totalGravada = redondear(totalGravada);
-    totalDescuento = redondear(totalDescuento);
+    totalNoSuj = totalNoSuj.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    totalExenta = totalExenta.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    totalGravada = totalGravada.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    totalDescuento = totalDescuento.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // Para DTE con tributos (03, 05, 06) el IVA no viene por línea,
     // se calcula sobre el totalGravada
-    if (usaTributos && totalIva === 0) {
-        totalIva = redondear(totalGravada * IVA_RATE);
+    if (usaTributos && totalIva.isZero()) {
+        totalIva = totalGravada.mul(IVA_RATE).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     } else {
-        totalIva = redondear(totalIva);
+        totalIva = totalIva.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     }
 
-    const subTotalVentas = redondear(totalNoSuj + totalExenta + totalGravada);
+    const subTotalVentas = totalNoSuj.add(totalExenta).add(totalGravada).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const subTotal = subTotalVentas;
-    const tributosResumen = usaTributos ? generarTributosResumen(tipoDte, totalIva) : null;
+    const tributosResumen = usaTributos ? generarTributosResumen(tipoDte, totalIva.toNumber()) : null;
 
     // ══════════════════════════════════════════════════════════════
     // NC (05) y ND (06): resumen con estructura propia del schema v3
@@ -184,23 +189,23 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     // Campos REQUERIDOS: ivaPerci1, ivaRete1
     // ══════════════════════════════════════════════════════════════
     if (tipoDte === '05' || tipoDte === '06') {
-        const montoTotalOperacion = redondear(subTotal + totalIva);
+        const montoTotalOperacion = subTotal.add(totalIva).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         const resumenNC = {
-            totalNoSuj,
-            totalExenta,
-            totalGravada,
-            subTotalVentas,
+            totalNoSuj: totalNoSuj.toNumber(),
+            totalExenta: totalExenta.toNumber(),
+            totalGravada: totalGravada.toNumber(),
+            subTotalVentas: subTotalVentas.toNumber(),
             descuNoSuj: 0.00,
             descuExenta: 0.00,
             descuGravada: 0.00,
             totalDescu: 0.00,
             tributos: tributosResumen,
-            subTotal,
+            subTotal: subTotal.toNumber(),
             ivaPerci1: 0.00,
             ivaRete1: 0.00,
             reteRenta: 0.00,
-            montoTotalOperacion,
-            totalLetras: numeroALetras(montoTotalOperacion),
+            montoTotalOperacion: montoTotalOperacion.toNumber(),
+            totalLetras: numeroALetras(montoTotalOperacion.toNumber()),
             condicionOperacion,
         };
         // ND requiere numPagoElectronico, NC no
@@ -214,17 +219,17 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     // FSE (14): resumen con estructura única
     // ══════════════════════════════════════════════════════════════
     if (tipoDte === '14') {
-        const reteRenta = redondear(totalGravada * 0.10);
-        const montoTotalOperacion = redondear(subTotal - reteRenta);
+        const reteRenta = totalGravada.mul(0.10).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const montoTotalOperacion = subTotal.sub(reteRenta).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         return {
-            totalCompra: totalGravada,
-            descu: totalDescuento,
-            totalDescu: totalDescuento,
-            subTotal,
+            totalCompra: totalGravada.toNumber(),
+            descu: totalDescuento.toNumber(),
+            totalDescu: totalDescuento.toNumber(),
+            subTotal: subTotal.toNumber(),
             ivaRete1: 0.00,
-            reteRenta,
-            totalPagar: montoTotalOperacion,
-            totalLetras: numeroALetras(montoTotalOperacion),
+            reteRenta: reteRenta.toNumber(),
+            totalPagar: montoTotalOperacion.toNumber(),
+            totalLetras: numeroALetras(montoTotalOperacion.toNumber()),
             condicionOperacion,
             pagos: undefined, // Se omitirá porque la validación puede fallar si mandamos nulo
             observaciones: null,
@@ -235,10 +240,10 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     // CD (15): resumen único — totalDonado sin IVA
     // ══════════════════════════════════════════════════════════════
     if (tipoDte === '15') {
-        const totalDonado = redondear(totalGravada);
+        const totalDonado = totalGravada;
         return {
-            totalDonado,
-            totalDescu: redondear(totalDescuento),
+            totalDonado: totalDonado.toNumber(),
+            totalDescu: totalDescuento.toNumber(),
             observaciones: null,
         };
     }
@@ -249,21 +254,21 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     //            saldoFavor, totalPagar, totalNoGravado, ivaPerci1, ivaRete1, reteRenta
     // ══════════════════════════════════════════════════════════════
     if (tipoDte === '04') {
-        const montoTotalOperacion = redondear(subTotal + totalIva);
+        const montoTotalOperacion = subTotal.add(totalIva).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         return {
-            totalNoSuj,
-            totalExenta,
-            totalGravada,
-            subTotalVentas,
+            totalNoSuj: totalNoSuj.toNumber(),
+            totalExenta: totalExenta.toNumber(),
+            totalGravada: totalGravada.toNumber(),
+            subTotalVentas: subTotalVentas.toNumber(),
             descuNoSuj: 0.00,
             descuExenta: 0.00,
             descuGravada: 0.00,
             porcentajeDescuento: 0.00,
             totalDescu: 0.00,
             tributos: tributosResumen,
-            subTotal,
-            montoTotalOperacion,
-            totalLetras: numeroALetras(montoTotalOperacion),
+            subTotal: subTotal.toNumber(),
+            montoTotalOperacion: montoTotalOperacion.toNumber(),
+            totalLetras: numeroALetras(montoTotalOperacion.toNumber()),
         };
     }
 
@@ -271,41 +276,38 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     // FE-01 / CCF-03: resumen extendido
     // FEX-11 y FSE-14 también están procesados en sus propios builders o arriba
     // ══════════════════════════════════════════════════════════════
-    let montoTotalOperacion, reteRenta = 0.00;
+    let montoTotalOperacion, reteRenta = new Decimal(0);
 
     if (precioIncluyeIva) {
         montoTotalOperacion = subTotal;
-    } else if (tipoDte === '14') {
-        reteRenta = redondear(totalGravada * 0.10);
-        montoTotalOperacion = redondear(subTotal - reteRenta);
     } else if (tipoDte === '11') {
         montoTotalOperacion = subTotal;
     } else {
         // CCF-03: subTotal + IVA calculado
-        montoTotalOperacion = redondear(subTotal + totalIva);
+        montoTotalOperacion = subTotal.add(totalIva).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     }
 
-    const totalPagar = redondear(montoTotalOperacion);
+    const totalPagar = montoTotalOperacion.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     const resumenFinal = {
-        totalNoSuj,
-        totalExenta,
-        totalGravada,
-        subTotalVentas,
+        totalNoSuj: totalNoSuj.toNumber(),
+        totalExenta: totalExenta.toNumber(),
+        totalGravada: totalGravada.toNumber(),
+        subTotalVentas: subTotalVentas.toNumber(),
         descuNoSuj: 0.00,
         descuExenta: 0.00,
         descuGravada: 0.00,
         porcentajeDescuento: 0.00,
         totalDescu: 0.00,
         tributos: tributosResumen,
-        subTotal,
+        subTotal: subTotal.toNumber(),
         ivaRete1: 0.00,
-        reteRenta,
-        montoTotalOperacion,
+        reteRenta: reteRenta.toNumber(),
+        montoTotalOperacion: montoTotalOperacion.toNumber(),
         totalNoGravado: 0.00,
-        totalPagar,
-        totalLetras: numeroALetras(totalPagar),
-        totalIva,
+        totalPagar: totalPagar.toNumber(),
+        totalLetras: numeroALetras(totalPagar.toNumber()),
+        totalIva: totalIva.toNumber(),
         saldoFavor: 0.00,
         condicionOperacion,
         pagos: null,
@@ -324,9 +326,11 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
  * Valida que los cálculos cuadren
  */
 const validarCuadre = (resumen) => {
-    const sumaComponentes = redondear(
-        resumen.totalNoSuj + resumen.totalExenta + resumen.totalGravada
-    );
+    const sumaComponentes = new Decimal(resumen.totalNoSuj || 0)
+        .add(resumen.totalExenta || 0)
+        .add(resumen.totalGravada || 0)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+        .toNumber();
     const cuadraSubtotal = sumaComponentes === resumen.subTotalVentas;
     const cuadraTotalPagar = resumen.montoTotalOperacion === resumen.totalPagar;
 

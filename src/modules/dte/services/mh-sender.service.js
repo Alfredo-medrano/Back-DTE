@@ -26,7 +26,8 @@ if (redisUrl) {
     redis.on('error', (err) => logger.error('Redis cache error', { error: err.message }));
 } else {
     logger.warn('REDIS_URL no configurado. Usando caché en RAM compartida transitoria (No multi-instancia).');
-    const localMap = new Map();
+    global.localTokenMap = global.localTokenMap || new Map();
+    const localMap = global.localTokenMap;
     redis = {
         get: async (key) => {
             const hit = localMap.get(key);
@@ -136,6 +137,7 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
         const response = await ejecutarConCircuito('HACIENDA_MH', async () => {
             return await mhClient.post('/fesv/recepciondte', payload, {
                 headers: { 'Authorization': auth.token },
+                _credenciales: credenciales,
             });
         });
 
@@ -166,20 +168,20 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
     }
 };
 
-/**
- * Consulta el estado de un DTE enviado
- * @param {object} params - Parámetros de consulta
- */
-const consultarEstado = async ({ codigoGeneracion, tipoContingente, credenciales }) => {
+const consultarEstado = async ({ codigoGeneracion, tdte, credenciales }) => {
     try {
         const auth = await autenticar(credenciales);
         if (!auth.exito) return { exito: false, error: 'Sin token' };
 
-        const params = { codigoGeneracion };
-        if (tipoContingente) params.tpContingente = tipoContingente;
+        const payload = {
+            nitEmisor: credenciales.nit,
+            tdte: tdte || '01',
+            codigoGeneracion,
+        };
 
-        const response = await mhClient.post('/fesv/consultadte', params, {
+        const response = await mhClient.post('/fesv/recepcion/consultadte/', payload, {
             headers: { 'Authorization': auth.token },
+            _credenciales: credenciales,
         });
 
         return { exito: true, data: response.data };
@@ -206,6 +208,7 @@ const anularDTE = async ({ documentoAnulacion, ambiente, credenciales }) => {
 
         const response = await mhClient.post('/fesv/anulardte', payload, {
             headers: { 'Authorization': auth.token },
+            _credenciales: credenciales,
         });
 
         return { exito: response.data.estado === 'PROCESADO', data: response.data };
