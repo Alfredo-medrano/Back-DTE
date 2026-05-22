@@ -26,7 +26,7 @@ const crearFactura = async (req, res, next) => {
     try {
         // SEGURIDAD: Usar datos validados por Zod en vez de req.body crudo
         const validatedData = req.validatedBody || req.body;
-        const { receptor, items, condicionOperacion, documentoRelacionado, datosExportacion, observaciones } = validatedData;
+        const { receptor, items, condicionOperacion, documentoRelacionado, datosExportacion, observaciones, datosPago } = validatedData;
         const tipoDte = validatedData.tipoDte || '01';
         const { tenant, emisor } = req;
 
@@ -67,6 +67,7 @@ const crearFactura = async (req, res, next) => {
                 documentoRelacionado: documentoRelacionado || null,
                 datosExportacion: datosExportacion || {},
                 observaciones: observaciones || null,
+                datosPago: datosPago || {},
             },
             emisor: emisorConCredenciales,
             tenantId: tenant.id,

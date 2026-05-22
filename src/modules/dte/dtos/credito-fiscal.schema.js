@@ -13,6 +13,7 @@ const {
     itemSchema,
     condicionOperacionSchema,
     nrcSchema,
+    datosPagoSchema,
 } = require('./base.schema');
 
 /**
@@ -43,6 +44,8 @@ const crearCCFSchema = z.object({
         numeroDocumento: z.string(),
         fechaEmision: z.string(),
     }).optional(),
+
+    datosPago: datosPagoSchema,
 });
 
 /**

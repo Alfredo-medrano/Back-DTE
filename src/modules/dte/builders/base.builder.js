@@ -52,8 +52,8 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
  * NC (05) / ND (06): PROHÍBE esos campos (additionalProperties: false)
  */
 const construirEmisor = (emisor, tipoDte = '01') => {
-    // NIT para Hacienda: acepta 9 o 14 dígitos
-    const nitHacienda = emisor.nit.slice(-9);
+    // NIT: Preservar formato original (14 dígitos) como lo requiere el MH
+    const nitHacienda = emisor.nit;
 
     const base = {
         nit: nitHacienda,
@@ -109,10 +109,11 @@ const procesarItems = (items, tipoDte) => {
  * @param {Array} cuerpoDocumento - Líneas procesadas
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
  * @param {string} tipoDte - Tipo de DTE
+ * @param {object} [datosPago] - Datos de pago {codigo, referencia, plazo, periodo}
  * @returns {object} Resumen formateado
  */
-const calcularResumen = (cuerpoDocumento, condicionOperacion, tipoDte) => {
-    return calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte);
+const calcularResumen = (cuerpoDocumento, condicionOperacion, tipoDte, datosPago = {}) => {
+    return calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte, datosPago);
 };
 
 module.exports = {

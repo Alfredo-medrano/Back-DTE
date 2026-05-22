@@ -15,6 +15,7 @@
 const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
 const { construirDocumento: buildDTE } = require('../builders');
+const { sanitizarParaMH } = require('../builders/sanitize-for-mh');
 const logger = require('../../../shared/logger');
 
 /**
@@ -33,6 +34,7 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
         documentoRelacionado = null,
         datosExportacion = {},
         observaciones = null,
+        datosPago = {},
     } = datos;
 
     logger.info(`Construyendo DTE ${tipoDte}`, { tenantId, receptor: receptor?.nombre || 'RECEPTOR' });
@@ -53,12 +55,17 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
             documentoRelacionado,
             datosExportacion,
             observaciones,
+            datosPago,
         });
     } catch (buildError) {
         throw new Error(`Builder DTE-${tipoDte}: ${buildError.message}`);
     }
 
-    logger.info('Documento DTE construido', { codigoGeneracion: documentoDTE.identificacion.codigoGeneracion });
+    // CRÍTICO: Sanitizar undefined→eliminado antes de firmar/enviar
+    // MH usa additionalProperties:false y rechaza campos inesperados
+    documentoDTE = sanitizarParaMH(documentoDTE);
+
+    logger.info('Documento DTE construido y sanitizado', { codigoGeneracion: documentoDTE.identificacion.codigoGeneracion });
     return documentoDTE;
 };
 

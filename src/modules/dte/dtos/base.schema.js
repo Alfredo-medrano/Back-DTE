@@ -161,6 +161,23 @@ const condicionOperacionSchema = z.number()
     .default(1);
 
 // ========================================
+// DATOS DE PAGO
+// ========================================
+
+/**
+ * Datos del método de pago
+ * codigo: 01=Efectivo, 02=Cheque, 03=Transferencia, 04=Tarjeta, 99=Otros
+ * plazo: 01=Días, 02=Meses, 03=Años (requerido para crédito)
+ * periodo: número de días/meses/años (requerido para crédito)
+ */
+const datosPagoSchema = z.object({
+    codigo: z.string().default('01'),
+    referencia: z.string().nullable().optional(),
+    plazo: z.string().nullable().optional(),
+    periodo: z.number().nullable().optional(),
+}).optional();
+
+// ========================================
 // TIPOS DE DTE
 // ========================================
 
@@ -194,4 +211,5 @@ module.exports = {
     tipoItemSchema,
     condicionOperacionSchema,
     tipoDteSchema,
+    datosPagoSchema,
 };

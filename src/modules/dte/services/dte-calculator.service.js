@@ -137,9 +137,10 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
  * @param {Array} lineas - Array de líneas del cuerpoDocumento
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
  * @param {string} tipoDte - Código del tipo de DTE
+ * @param {object} [datosPago] - Datos de pago opcionales {codigo, referencia, plazo, periodo}
  * @returns {object} Resumen formateado según Anexo II
  */
-const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') => {
+const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', datosPago = {}) => {
     const configDte = obtenerConfigDTE(tipoDte);
     const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
     const usaTributos = configDte ? configDte.usaTributos : false;
@@ -273,14 +274,15 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
     }
 
     // ══════════════════════════════════════════════════════════════
-    // FE-01 / CCF-03: resumen extendido
-    // FEX-11 y FSE-14 también están procesados en sus propios builders o arriba
+    // FE-01 / CCF-03 / FEX-11: resumen extendido
     // ══════════════════════════════════════════════════════════════
     let montoTotalOperacion, reteRenta = new Decimal(0);
 
     if (precioIncluyeIva) {
+        // FE (01): ventaGravada YA incluye IVA
         montoTotalOperacion = subTotal;
     } else if (tipoDte === '11') {
+        // FEX (11): Exportación sin IVA
         montoTotalOperacion = subTotal;
     } else {
         // CCF-03: subTotal + IVA calculado
@@ -289,7 +291,48 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
 
     const totalPagar = montoTotalOperacion.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-    const resumenFinal = {
+    // ══════════════════════════════════════════════════════════════
+    // PAGOS: Obligatorio como array para FE-01, CCF-03, FEX-11
+    // MH RECHAZA pagos: null — debe ser un array con al menos 1 elemento
+    // Venta a crédito (condicionOperacion: 2) requiere plazo y periodo
+    // ══════════════════════════════════════════════════════════════
+    const pagos = generarPagos(condicionOperacion, totalPagar.toNumber(), datosPago);
+
+    // ══════════════════════════════════════════════════════════════
+    // ESTRUCTURA DIFERENCIADA: FE-01 vs CCF-03
+    // FE-01: incluye totalIva, NO incluye ivaPerci1
+    // CCF-03: incluye ivaPerci1, NO incluye totalIva
+    // ══════════════════════════════════════════════════════════════
+    if (tipoDte === '03') {
+        // CCF-03: orden exacto según golden JSON del MH
+        return {
+            totalNoSuj: totalNoSuj.toNumber(),
+            totalExenta: totalExenta.toNumber(),
+            totalGravada: totalGravada.toNumber(),
+            subTotalVentas: subTotalVentas.toNumber(),
+            descuNoSuj: 0.00,
+            descuExenta: 0.00,
+            descuGravada: 0.00,
+            porcentajeDescuento: 0.00,
+            totalDescu: 0.00,
+            tributos: tributosResumen,
+            subTotal: subTotal.toNumber(),
+            ivaPerci1: 0.00,
+            ivaRete1: 0.00,
+            reteRenta: reteRenta.toNumber(),
+            montoTotalOperacion: montoTotalOperacion.toNumber(),
+            totalNoGravado: 0.00,
+            totalPagar: totalPagar.toNumber(),
+            totalLetras: numeroALetras(totalPagar.toNumber()),
+            saldoFavor: 0.00,
+            condicionOperacion,
+            pagos,
+            numPagoElectronico: null,
+        };
+    }
+
+    // FE-01 y FEX-11: incluyen totalIva, NO ivaPerci1
+    return {
         totalNoSuj: totalNoSuj.toNumber(),
         totalExenta: totalExenta.toNumber(),
         totalGravada: totalGravada.toNumber(),
@@ -310,16 +353,38 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01') 
         totalIva: totalIva.toNumber(),
         saldoFavor: 0.00,
         condicionOperacion,
-        pagos: null,
+        pagos,
         numPagoElectronico: null,
     };
-    
-    // Percepcion de IVA solo es aplicable/permitida en Credito Fiscal (03)
-    if (tipoDte === '03') {
-        resumenFinal.ivaPerci1 = 0.00;
+};
+
+/**
+ * Genera el array de pagos según condición de operación.
+ * MH REQUIERE pagos como array, NUNCA null.
+ *
+ * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
+ * @param {number} montoPago - Monto total a pagar
+ * @param {object} datosPago - Datos opcionales {codigo, referencia, plazo, periodo}
+ * @returns {Array} Array de objetos de pago
+ */
+const generarPagos = (condicionOperacion, montoPago, datosPago = {}) => {
+    // Validación: Crédito requiere plazo y periodo
+    if (condicionOperacion === 2) {
+        if (!datosPago.plazo || datosPago.periodo === undefined || datosPago.periodo === null) {
+            throw new Error(
+                'Venta a crédito (condicionOperacion: 2) requiere plazo y periodo en datosPago. ' +
+                'Ejemplo: { plazo: "01", periodo: 30 } donde plazo 01=días, 02=meses'
+            );
+        }
     }
-    
-    return resumenFinal;
+
+    return [{
+        codigo: datosPago.codigo || '01',   // 01=Efectivo por defecto
+        montoPago: montoPago,
+        referencia: datosPago.referencia || null,
+        plazo: condicionOperacion === 2 ? (datosPago.plazo || null) : null,
+        periodo: condicionOperacion === 2 ? (datosPago.periodo || null) : null,
+    }];
 };
 
 /**

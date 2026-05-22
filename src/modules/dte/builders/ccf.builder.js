@@ -4,7 +4,13 @@
  * Módulo: DTE
  * ========================================
  * Construye documento CCF según Anexo II MH
- * DIFERENCIA CON FE: IVA separado, receptor con NRC
+ *
+ * REGLAS CRÍTICAS DTE-03:
+ * - precioUni SIN IVA (precio base neto)
+ * - cuerpoDocumento lleva tributos: ["20"], NO lleva ivaItem
+ * - resumen lleva ivaPerci1, NO lleva totalIva
+ * - receptor OBLIGATORIO con NIT + NRC
+ * - pagos es SIEMPRE un array (nunca null)
  */
 
 const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
@@ -13,20 +19,23 @@ const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen
  * Construye un documento Crédito Fiscal completo
  * @param {object} params - Parámetros del documento
  */
-const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1 }) => {
+const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1, datosPago = {} }) => {
     const tipoDte = '03';
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
     const emisorDTE = construirEmisor(emisor, tipoDte);
     const cuerpoDocumento = procesarItems(items, tipoDte);
-    const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte);
+
+    // El calculador ya retorna el resumen correcto para CCF-03
+    // (con ivaPerci1, sin totalIva, con pagos como array)
+    const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte, datosPago);
 
     return {
         identificacion,
         documentoRelacionado: null,
         emisor: emisorDTE,
         receptor: {
-            // CCF REQUIERE NIT y NRC del receptor de forma directa (sin tipoDocumento)
+            // CCF REQUIERE NIT y NRC del receptor directamente (sin tipoDocumento)
             nit: receptor.nit || receptor.numDocumento, // OBLIGATORIO en DTE-03
             nrc: receptor.nrc, // OBLIGATORIO
             nombre: (receptor.nombre || '').toUpperCase(),
@@ -44,31 +53,7 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         otrosDocumentos: null,
         ventaTercero: null,
         cuerpoDocumento,
-        resumen: {
-            totalNoSuj: resumen.totalNoSuj,
-            totalExenta: resumen.totalExenta,
-            totalGravada: resumen.totalGravada,
-            subTotalVentas: resumen.subTotalVentas,
-            descuNoSuj: resumen.descuNoSuj,
-            descuExenta: resumen.descuExenta,
-            descuGravada: resumen.descuGravada,
-            porcentajeDescuento: resumen.porcentajeDescuento,
-            totalDescu: resumen.totalDescu,
-            tributos: resumen.tributos,
-            subTotal: resumen.subTotal,
-            ivaPerci1: 0.00, // CAMPO REQUERIDO DTE-03
-            ivaRete1: resumen.ivaRete1,
-            reteRenta: resumen.reteRenta,
-            montoTotalOperacion: resumen.montoTotalOperacion,
-            totalNoGravado: resumen.totalNoGravado,
-            totalPagar: resumen.totalPagar,
-            totalLetras: resumen.totalLetras,
-            saldoFavor: resumen.saldoFavor,
-            condicionOperacion: resumen.condicionOperacion,
-            pagos: resumen.pagos,
-            numPagoElectronico: resumen.numPagoElectronico,
-            // NOTA: totalIva NO va en DTE-03
-        },
+        resumen,
         extension: null,
         apendice: null,
     };
