@@ -53,6 +53,8 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.10.0",
     "prisma": "^5.22.0",
+    "puppeteer": "^25.0.4",
+    "qrcode": "^1.5.4",
     "uuid": "^13.0.0",
     "winston": "^3.19.0",
     "zod": "^4.3.6"

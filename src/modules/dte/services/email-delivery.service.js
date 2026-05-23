@@ -10,6 +10,7 @@
 
 const nodemailer = require('nodemailer');
 const logger = require('../../../shared/logger');
+const { generarPDF } = require('./pdf-generator.service');
 
 // Configuración SMTP desde variables de entorno
 const smtpHost = process.env.SMTP_HOST;
@@ -303,23 +304,43 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
                 enlacePublico: linkPublico
             });
 
-            // Convertir el jsonFirmado a string para el adjunto
+            // 1. Convertir el jsonFirmado a string para el adjunto
             const jsonString = typeof jsonFirmado === 'string'
                 ? jsonFirmado
                 : JSON.stringify(jsonFirmado, null, 2);
+
+            // 2. Generar representación gráfica (PDF)
+            let pdfBuffer = null;
+            try {
+                // Recuperar el objeto completo DTE o armarlo si viene desde BD
+                const dteRender = dte.documento || jsonFirmado || dte;
+                pdfBuffer = await generarPDF(dteRender);
+            } catch (pdfErr) {
+                logger.error('SMTP: Error al generar PDF, se enviará sin adjunto gráfico', { error: pdfErr.message });
+            }
+
+            const attachments = [
+                {
+                    filename: `${codigoGeneracion}.json`,
+                    content: jsonString,
+                    contentType: 'application/json'
+                }
+            ];
+
+            if (pdfBuffer) {
+                attachments.push({
+                    filename: `Factura_${codigoGeneracion}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                });
+            }
 
             const mailOptions = {
                 from: smtpFrom,
                 to: receptorCorreo,
                 subject: `Comprobante de Factura Electrónica — ${emisor.nombre}`,
                 html: htmlContent,
-                attachments: [
-                    {
-                        filename: `${codigoGeneracion}.json`,
-                        content: jsonString,
-                        contentType: 'application/json'
-                    }
-                ]
+                attachments
             };
 
             const info = await transporter.sendMail(mailOptions);

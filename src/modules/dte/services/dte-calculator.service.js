@@ -41,8 +41,17 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const usaTributos = configDte ? configDte.usaTributos : false;
 
     const cantidad = new Decimal(item.cantidad || 0);
-    const precioUnitario = new Decimal(item.precioUnitario || item.precioUni || 0);
+    let precioUnitario = new Decimal(item.precioUnitario || item.precioUni || 0);
     const descuento = new Decimal(item.descuento || item.montoDescu || 0);
+
+    // ════════════════════════════════════════════════════════════
+    // ADAPTACIÓN B2B/B2C: Inyección de IVA en Facturas (DTE-01)
+    // Si la plataforma guarda precios SIN IVA (ej. $20) pero 
+    // Hacienda exige precios CON IVA en Facturas, le sumamos el 13%.
+    // ════════════════════════════════════════════════════════════
+    if (tipoDte === '01' && (item.precioSinIva === true || item.preciosSinIva === true)) {
+        precioUnitario = precioUnitario.mul(new Decimal(1).add(IVA_RATE));
+    }
 
     const montoBruto = cantidad.mul(precioUnitario);
     const montoNeto = montoBruto.sub(descuento);
