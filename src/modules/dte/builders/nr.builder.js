@@ -13,7 +13,7 @@
  * - Puede tener documentoRelacionado (FE-01 o CCF-03)
  */
 
-const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
+const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen, cleanNrc } = require('./base.builder');
 
 /**
  * Construye un documento Nota de Remisión completo
@@ -24,7 +24,12 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
     const emisorDTE = construirEmisor(emisor, tipoDte);
-    const cuerpoDocumento = procesarItems(items, tipoDte);
+    const cuerpoDocumento = procesarItems(items, tipoDte).map(item => {
+        delete item.psv;
+        delete item.noGravado;
+        delete item.ivaItem;
+        return item;
+    });
 
     // NR requiere tributos en cada línea que tenga ventaGravada > 0
     // Esto ya lo maneja procesarItems via dte-calculator + constants (usaTributos: true)
@@ -52,9 +57,16 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         documentoRelacionado: docRelacionado,
         emisor: emisorDTE,
         receptor: {
+            // NR receptor: schema fe-nr-v3.json
+            // Campos required: tipoDocumento, numDocumento, nrc, nombre,
+            //   codActividad, descActividad, nombreComercial, direccion,
+            //   telefono, correo, bienTitulo
+            // Regla condicional (allOf):
+            //   tipoDocumento === "36" → nrc: ["string","null"]
+            //   tipoDocumento !== "36" → nrc DEBE ser null
             tipoDocumento: receptor.tipoDocumento || '36',
             numDocumento: receptor.numDocumento,
-            nrc: receptor.nrc || null,
+            nrc: String(receptor.tipoDocumento || '36') === '36' ? cleanNrc(receptor.nrc) : null,
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad || null,
             descActividad: receptor.descActividad ? receptor.descActividad.toUpperCase() : null,

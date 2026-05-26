@@ -11,6 +11,7 @@
     generarTributosCuerpo,
     generarTributosResumen,
     IVA_RATE,
+    getFiscalLogic,
 } = require('../constants');
 
 const Decimal = require('decimal.js');
@@ -36,9 +37,9 @@ const redondear = (valor, decimales = 2) => {
 const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     const tipoItem = item.tipoItem || 1;
 
-    const configDte = obtenerConfigDTE(tipoDte);
-    const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
-    const usaTributos = configDte ? configDte.usaTributos : false;
+    const logic = getFiscalLogic(tipoDte);
+    const precioIncluyeIva = logic.calculaIvaInverso;
+    const usaTributos = logic.usaTributos;
 
     const cantidad = new Decimal(item.cantidad || 0);
     let precioUnitario = new Decimal(item.precioUnitario || item.precioUni || 0);
@@ -59,18 +60,23 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
     let precioUni, ventaGravada, ivaItem;
 
     if (precioIncluyeIva) {
-        precioUni = precioUnitario;
-        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const divisor = new Decimal(1).add(IVA_RATE);
-        ivaItem = montoNeto.div(divisor).mul(IVA_RATE).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        precioUni = precioUnitario; // Preserva el precio unitario ingresado con IVA por ley DTE-01
+        const divisor = new Decimal(logic.divisorIva); // 1.13
+        
+        // MH requiere que cantidad * precioUni == ventaGravada. Por tanto, ventaGravada INCLUYE IVA.
+        ventaGravada = montoNeto.toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
+        
+        // Calculamos el ivaItem (Monto - Monto/1.13) como información
+        const montoSinIva = montoNeto.div(divisor).toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
+        ivaItem = montoNeto.toDecimalPlaces(8, Decimal.ROUND_HALF_UP).sub(montoSinIva);
     } else if (tipoDte === '14' || tipoDte === '11') {
         precioUni = precioUnitario;
-        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        ventaGravada = montoNeto.toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
         ivaItem = new Decimal(0);
     } else {
         precioUni = precioUnitario;
-        ventaGravada = montoNeto.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        ivaItem = montoNeto.mul(IVA_RATE).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        ventaGravada = montoNeto.toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
+        ivaItem = montoNeto.mul(logic.tasaIva).toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
     }
 
     let uniMedida = 59;
@@ -114,8 +120,8 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
         codTributo: null,
         uniMedida,
         descripcion: (item.descripcion || '').toUpperCase(),
-        precioUni: precioUni.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
-        montoDescu: descuento.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+        precioUni: precioUni.toDecimalPlaces(8, Decimal.ROUND_HALF_UP).toNumber(),
+        montoDescu: descuento.toDecimalPlaces(8, Decimal.ROUND_HALF_UP).toNumber(),
     };
 
     if (tipoDte === '14') {
@@ -150,9 +156,9 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
  * @returns {object} Resumen formateado según Anexo II
  */
 const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', datosPago = {}) => {
-    const configDte = obtenerConfigDTE(tipoDte);
-    const precioIncluyeIva = configDte ? configDte.precioIncluyeIVA : (tipoDte === '01');
-    const usaTributos = configDte ? configDte.usaTributos : false;
+    const logic = getFiscalLogic(tipoDte);
+    const precioIncluyeIva = logic.calculaIvaInverso;
+    const usaTributos = logic.usaTributos;
 
     let totalNoSuj = new Decimal(0);
     let totalExenta = new Decimal(0);

@@ -79,6 +79,30 @@ const generarTributosResumen = (tipoDte, valorIva) => {
 };
 
 /**
+ * Obtiene la lógica fiscal explícita y unificada para un tipo de DTE
+ * @param {string} tipoDte - Código del tipo de DTE
+ * @returns {object} Configuración lógica para cálculos y validaciones
+ */
+const getFiscalLogic = (tipoDte) => {
+    const config = TIPOS_DTE[tipoDte];
+    if (!config) {
+        throw new Error(`Tipo DTE no soportado: ${tipoDte}`);
+    }
+
+    return {
+        calculaIvaInverso: config.precioIncluyeIVA, // true para FC (01)
+        divisorIva: 1 + IVA_RATE, // 1.13
+        tasaIva: IVA_RATE, // 0.13
+        requiereNRC: config.requiereNRCReceptor, // true para CCF (03), NC (05), ND (06)
+        requiereDocRelacionado: config.requiereDocRelacionado, // true para NC (05), ND (06)
+        aplicaRetencion: config.aplicaRetencion || false,
+        tasaRetencion: config.tasaRetencion || 0,
+        usaTributos: config.usaTributos, // true para CCF, NC, ND
+        usaReceptor: config.usaReceptor, // false para FSE (14)
+    };
+};
+
+/**
  * Lista todos los tipos de DTE soportados
  * @returns {array} Array con objetos {codigo, nombre}
  */
@@ -113,4 +137,5 @@ module.exports = {
     generarTributosCuerpo,
     generarTributosResumen,
     listarTiposDTE,
+    getFiscalLogic,
 };

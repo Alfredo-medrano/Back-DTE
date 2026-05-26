@@ -8,7 +8,7 @@
  * No lleva IVA (tipoItem = 4 para servicios o 1 para bienes)
  */
 
-const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
+const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen, formatDocumentoReceptor } = require('./base.builder');
 
 /**
  * Construye un documento Factura Sujeto Excluido completo
@@ -50,10 +50,8 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         emisor: emisorDTE,
         sujetoExcluido: {
             tipoDocumento: receptor.tipoDocumento || '13', // 13 = DUI
-            // Si es DUI (13), el schema exige exactamente 9 dígitos. Quitamos guiones si los trae.
-            numDocumento: (receptor.tipoDocumento === '13' || !receptor.tipoDocumento)
-                ? (receptor.numDocumento || '').replace(/\D/g, '')
-                : receptor.numDocumento,
+            // Si es DUI (13) o NIT (36), aplica máscara exacta
+            numDocumento: formatDocumentoReceptor(receptor.tipoDocumento || '13', receptor.numDocumento),
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad || null,
             descActividad: receptor.descActividad?.toUpperCase() || null,

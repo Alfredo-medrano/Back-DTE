@@ -12,6 +12,55 @@ const { calcularLineaProducto, calcularResumenFactura } = require('../services/d
 const { obtenerConfigDTE } = require('../constants');
 
 /**
+ * Formatea el documento del receptor según exigencias del MH
+ * DUI: 00000000-0
+ * NIT: 0000-000000-000-0
+ * @param {string} tipoDocumento - 13 (DUI), 36 (NIT)
+ * @param {string} valorRaw - Valor original del documento
+ * @returns {string} Valor formateado o el original si no aplica
+ */
+const formatDocumentoReceptor = (tipoDocumento, valorRaw) => {
+    if (!valorRaw) return null;
+    
+    // Convertir a string para evitar problemas con números e inputs
+    const valorStr = String(valorRaw);
+    const tipo = String(tipoDocumento);
+
+    // Limpiar: extraer solo los dígitos
+    const cleanValue = valorStr.replace(/[^0-9]/g, '');
+
+    if (tipo === "13") { // DUI
+        if (cleanValue.length === 9) {
+            // Formato DUI: 00000000-0 (EXIGE guion según schema ^[0-9]{8}-[0-9]{1}$)
+            return `${cleanValue.substring(0, 8)}-${cleanValue.substring(8)}`;
+        }
+        // DUI incompleto: devolver dígitos con guion si hay al menos 9
+        if (cleanValue.length >= 9) {
+            return `${cleanValue.substring(0, 8)}-${cleanValue.substring(8, 9)}`;
+        }
+    } else if (tipo === "36") { // NIT
+        // El schema exige estrictamente ^([0-9]{14}|[0-9]{9})$ para tipo 36
+        // SIEMPRE retornar solo dígitos limpios — nunca guiones
+        return cleanValue;
+    }
+    
+    // Para otros tipos de documento (02, 03, 37), retornar valor limpio sin caracteres extra
+    // pero preservar letras (ej: pasaporte)
+    return valorStr.replace(/^\s+|\s+$/g, '');
+};
+
+/**
+ * Limpia el NRC eliminando guiones y espacios
+ * @param {string} valorRaw - Valor original del NRC
+ * @returns {string|null} NRC limpio (ej. 1234567)
+ */
+const cleanNrc = (valorRaw) => {
+    if (!valorRaw) return null;
+    const limpio = String(valorRaw).replace(/[-\s]/g, '');
+    return limpio || null;
+};
+
+/**
  * Construye el bloque de identificación del DTE
  * Usa un solo timestamp para fecha y hora (sin race condition)
  * @param {string} tipoDte - Tipo de DTE (01, 03, 05, etc.)
@@ -121,4 +170,6 @@ module.exports = {
     construirEmisor,
     procesarItems,
     calcularResumen,
+    formatDocumentoReceptor,
+    cleanNrc,
 };

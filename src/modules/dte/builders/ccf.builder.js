@@ -13,7 +13,14 @@
  * - pagos es SIEMPRE un array (nunca null)
  */
 
-const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
+const {
+    construirIdentificacion,
+    construirEmisor,
+    procesarItems,
+    calcularResumen,
+    cleanNrc,
+} = require('./base.builder');
+const { getFiscalLogic } = require('../constants');
 
 /**
  * Construye un documento Crédito Fiscal completo
@@ -21,6 +28,7 @@ const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen
  */
 const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1, datosPago = {} }) => {
     const tipoDte = '03';
+    const logic = getFiscalLogic(tipoDte);
 
     const identificacion = construirIdentificacion(tipoDte, emisor, correlativo);
     const emisorDTE = construirEmisor(emisor, tipoDte);
@@ -30,23 +38,35 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
     // (con ivaPerci1, sin totalIva, con pagos como array)
     const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte, datosPago);
 
+    if (!receptor || !receptor.nrc || !(receptor.nit || receptor.numDocumento)) {
+        throw new Error('DTE-03 (CCF): El receptor debe tener obligatoriamente NIT y NRC.');
+    }
+
+    if (!receptor.correo) {
+        throw new Error('DTE-03 (CCF): El receptor requiere correo electrónico obligatorio.');
+    }
+
     return {
         identificacion,
         documentoRelacionado: null,
         emisor: emisorDTE,
         receptor: {
-            // CCF REQUIERE NIT y NRC del receptor directamente (sin tipoDocumento)
-            nit: receptor.nit || receptor.numDocumento, // OBLIGATORIO en DTE-03
-            nrc: receptor.nrc, // OBLIGATORIO
+            // CCF receptor: schema fe-ccf-v3.json
+            // Campos required: nit, nrc, nombre, codActividad, descActividad,
+            //   nombreComercial, direccion, telefono, correo
+            // nit: pattern ^([0-9]{14}|[0-9]{9})$
+            // nrc: pattern ^[0-9]{1,8}$
+            nit: receptor.nit || receptor.numDocumento,
+            nrc: cleanNrc(receptor.nrc),
             nombre: (receptor.nombre || '').toUpperCase(),
-            codActividad: receptor.codActividad,
-            descActividad: (receptor.descActividad || '').toUpperCase(),
+            codActividad: receptor.codActividad || '10005',
+            descActividad: (receptor.descActividad || 'OTROS').toUpperCase(),
             nombreComercial: receptor.nombreComercial?.toUpperCase() || null,
-            direccion: receptor.direccion ? {
-                departamento: receptor.direccion.departamento || '06',
-                municipio: receptor.direccion.municipio || '14',
-                complemento: (receptor.direccion.complemento || '').toUpperCase(),
-            } : null,
+            direccion: {
+                departamento: receptor.direccion?.departamento || '06',
+                municipio: receptor.direccion?.municipio || '14',
+                complemento: (receptor.direccion?.complemento || 'SIN DIRECCION').toUpperCase(),
+            },
             telefono: receptor.telefono || null,
             correo: receptor.correo,
         },

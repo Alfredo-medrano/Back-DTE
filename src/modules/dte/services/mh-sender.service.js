@@ -163,7 +163,11 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
         };
 
     } catch (error) {
-        logger.error('Error al enviar DTE', { nit: credenciales.nit, error: error.message });
+        logger.error('Error al enviar DTE', { 
+            nit: credenciales.nit, 
+            error: error.message,
+            mhResponse: error.response?.data
+        });
         return { exito: false, error: error.response?.data || error.message, mensaje: 'Error de comunicación' };
     }
 };

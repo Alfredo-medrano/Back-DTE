@@ -129,7 +129,6 @@ const calcularResumenFEX = (cuerpoDocumento, condicionOperacion = 1, datosExport
         pagos: null,
         codIncoterms: datosExportacion.codIncoterms || null,
         descIncoterms: datosExportacion.descIncoterms || null,
-        numPagoElectronico: null,
         observaciones: datosExportacion.observaciones || null,
     };
 };

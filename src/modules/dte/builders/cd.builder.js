@@ -13,7 +13,7 @@
  *  - Resumen: totalDonado, sin IVA
  */
 
-const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
+const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen, cleanNrc } = require('./base.builder');
 
 /**
  * Construye el bloque "donatario" (emisor) para el CD
@@ -76,7 +76,7 @@ const construirDonante = (receptor) => {
     return {
         tipoDocumento: receptor.tipoDocumento || '37',
         numDocumento: receptor.numDocumento || 'ANON',
-        nrc: receptor.nrc || null,
+        nrc: cleanNrc(receptor.nrc),
         nombre: (receptor.nombre || 'DONANTE ANÓNIMO').toUpperCase(),
         codActividad: receptor.codActividad || null,
         descActividad: receptor.descActividad ? receptor.descActividad.toUpperCase() : null,
@@ -107,13 +107,15 @@ const procesarItemsCD = (items) => {
 
         return {
             numItem: index + 1,
+            tipoDonacion: item.tipoDonacion || 1, // 1=Efectivo, 2=Bienes, 3=Especie
             cantidad: Math.round(cantidad * 100000000) / 100000000,
             codigo: item.codigo || null,
             uniMedida: item.uniMedida || item.unidadMedida || 99,
             descripcion: (item.descripcion || '').toUpperCase(),
-            precioUni: Math.round(precioUnitario * 100) / 100,
+            valorUni: Math.round(precioUnitario * 100) / 100,
             montoDescu: Math.round(descuento * 100) / 100,
-            donacion,
+            valor: donacion,
+            depreciacion: parseFloat(item.depreciacion || 0),
         };
     });
 };
@@ -139,15 +141,21 @@ const calcularResumenCD = (cuerpoDocumento, datos = {}) => {
 
     const entero = Math.floor(totalDonado);
     const centavos = Math.round((totalDonado - entero) * 100);
-    const centavosStr = String(centavos).padStart(2, '0');
-
     // Número a letras básico para el CD
     const totalLetras = `${totalDonado.toFixed(2)} USD`;
 
     return {
-        totalDonado,
+        valorTotal: totalDonado,
         totalDescu: totalDescuento,
+        totalLetras,
         observaciones: datos.observaciones || null,
+        pagos: [
+            {
+                codigo: "01",
+                montoPago: totalDonado,
+                referencia: null
+            }
+        ]
     };
 };
 
@@ -175,7 +183,13 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         identificacion,
         donatario,
         donante,
-        otrosDocumentos: null,
+        otrosDocumentos: [
+            {
+                codDocAsociado: 1,
+                descDocumento: "DONACION",
+                detalleDocumento: "COMPROBANTE DE DONACION"
+            }
+        ],
         cuerpoDocumento,
         resumen,
         apendice: null,

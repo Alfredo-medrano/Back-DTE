@@ -51,9 +51,10 @@ v2Router.post('/factura/:codigoGeneracion/anular',
     dteController.anularDTE
 );
 
-// Consultas
+// Consultas y Conciliación
 v2Router.get('/facturas', requierePermisos('dte:read'), dteController.listarFacturas);
 v2Router.get('/factura/:codigoGeneracion', requierePermisos('dte:read'), dteController.consultarFactura);
+v2Router.post('/factura/:codigoGeneracion/conciliar', requierePermisos('dte:create'), dteController.conciliarFactura);
 v2Router.get('/estadisticas', requierePermisos('dte:read'), dteController.estadisticas);
 
 // Pruebas (con credenciales del tenant)

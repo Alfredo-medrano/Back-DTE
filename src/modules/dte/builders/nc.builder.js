@@ -14,7 +14,7 @@
  *  - documentoRelacionado.tipoDocumento: solo "03" o "07"
  */
 
-const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen } = require('./base.builder');
+const { construirIdentificacion, construirEmisor, procesarItems, calcularResumen, cleanNrc } = require('./base.builder');
 
 /**
  * Construye un documento Nota de Crédito completo
@@ -56,18 +56,21 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
         }],
         emisor: emisorDTE,
         receptor: {
-            // NC receptor: igual que CCF — usa nit/nrc, NO tipoDocumento/numDocumento
+            // NC receptor: schema fe-nc-v3.json
+            // Campos required: nit, nrc, nombre, codActividad, descActividad,
+            //   nombreComercial, direccion, telefono, correo
+            // TODOS son tipo "string" puro (NO nullable) excepto nombreComercial y telefono
             nit: receptor.nit || receptor.numDocumento,
-            nrc: receptor.nrc || null,
+            nrc: cleanNrc(receptor.nrc),
             nombre: (receptor.nombre || '').toUpperCase(),
-            codActividad: receptor.codActividad || null,
-            descActividad: (receptor.descActividad || '').toUpperCase() || null,
+            codActividad: receptor.codActividad,
+            descActividad: (receptor.descActividad || '').toUpperCase(),
             nombreComercial: receptor.nombreComercial?.toUpperCase() || null,
-            direccion: receptor.direccion ? {
-                departamento: receptor.direccion.departamento || '06',
-                municipio: receptor.direccion.municipio || '14',
-                complemento: (receptor.direccion.complemento || '').toUpperCase(),
-            } : null,
+            direccion: {
+                departamento: receptor.direccion?.departamento || '06',
+                municipio: receptor.direccion?.municipio || '14',
+                complemento: (receptor.direccion?.complemento || 'SIN DIRECCION').toUpperCase(),
+            },
             telefono: receptor.telefono || null,
             correo: receptor.correo,
         },

@@ -273,6 +273,78 @@ const consultarFactura = async (req, res, next) => {
 };
 
 /**
+ * Conciliar estado de una factura (sincronizar con MH manualmente)
+ * POST /api/v2/factura/:codigoGeneracion/conciliar
+ */
+const conciliarFactura = async (req, res, next) => {
+    try {
+        const { codigoGeneracion } = req.params;
+        const { emisor } = req;
+
+        if (!codigoGeneracion) {
+            throw new BadRequestError('Se requiere el código de generación');
+        }
+
+        // Buscar en BD local
+        const dteLocal = await dteRepository.buscarPorCodigo(codigoGeneracion, emisor.id);
+
+        if (!dteLocal) {
+            throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
+        }
+
+        // Obtener credenciales del emisor
+        const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
+
+        // Consultar en Hacienda
+        const resultadoMH = await mhSender.consultarEstado({
+            codigoGeneracion,
+            tdte: dteLocal.tipoDte,
+            credenciales: {
+                nit: emisorConCredenciales.nit,
+                claveApi: emisorConCredenciales.mhClaveApi,
+            },
+        });
+
+        // Hacienda en pruebas devuelve estado: "PROCESADO", o estadoTransaccion, depende de la API
+        const estadoMH = resultadoMH.data?.estado || resultadoMH.data?.estadoTransaccion || (resultadoMH.data?.selloRecibido ? 'PROCESADO' : null);
+        let estadoActualizado = dteLocal.status;
+        let sello = dteLocal.selloRecibido;
+
+        // Conciliar si MH lo procesó y nosotros no lo tenemos así
+        if (estadoMH === 'PROCESADO' && dteLocal.status !== 'PROCESADO') {
+            sello = resultadoMH.data?.selloRecibido;
+            await dteRepository.actualizarEstado(dteLocal.id, {
+                status: 'PROCESADO',
+                selloRecibido: sello,
+                fechaProcesamiento: resultadoMH.data?.fechaProcesamiento || new Date(),
+                observaciones: 'Conciliado manualmente desde MH',
+            });
+            estadoActualizado = 'PROCESADO';
+            logger.info(`DTE ${codigoGeneracion} conciliado a PROCESADO`);
+        } else if (estadoMH === 'RECHAZADO' && dteLocal.status !== 'RECHAZADO') {
+            await dteRepository.actualizarEstado(dteLocal.id, {
+                status: 'RECHAZADO',
+                observaciones: 'Conciliado manualmente: Rechazado por MH',
+            });
+            estadoActualizado = 'RECHAZADO';
+            logger.info(`DTE ${codigoGeneracion} conciliado a RECHAZADO`);
+        }
+
+        res.json({
+            exito: true,
+            mensaje: estadoActualizado === dteLocal.status ? 'El estado ya estaba sincronizado' : `Estado actualizado a ${estadoActualizado}`,
+            local: {
+                status: estadoActualizado,
+                selloRecibido: sello,
+            },
+            hacienda: resultadoMH.data,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Estadísticas del tenant
  * GET /api/v2/estadisticas
  */
@@ -557,6 +629,7 @@ module.exports = {
     crearFactura,
     listarFacturas,
     consultarFactura,
+    conciliarFactura,
     consultarFacturaPublica,
     estadisticas,
     generarEjemplo,
