@@ -14,6 +14,7 @@ const { tenantService } = require('../../iam');
 const { calcularLineaProducto, calcularResumenFactura } = require('../services/dte-calculator.service');
 const { generarCodigoGeneracion, generarNumeroControl, generarFechaActual, generarHoraEmision } = require('../../../shared/utils');
 const logger = require('../../../shared/logger');
+const circuitBreaker = require('../../../shared/utils/circuit-breaker');
 
 /**
  * Crear una nueva factura electrónica (flujo completo MULTI-TENANT)
@@ -55,6 +56,74 @@ const crearFactura = async (req, res, next) => {
         const correlativo = await tenantService.obtenerSiguienteCorrelativo(emisor.id, tipoDte);
 
         // ═══════════════════════════════════════
+        // CONTROL DE CONTINGENCIA ACTIVA (Circuit Breaker Abierto)
+        // ═══════════════════════════════════════
+        if (!circuitBreaker.puedeEjecutar('HACIENDA_MH')) {
+            logger.warn('Circuit Breaker ABIERTO para HACIENDA_MH. Entrando en contingencia directa.');
+            
+            const contRes = await dteOrchestrator.procesarContingencia({
+                datos: {
+                    receptor,
+                    items,
+                    tipoDte,
+                    correlativo,
+                    condicionOperacion: condicionOperacion || 1,
+                    documentoRelacionado: documentoRelacionado || null,
+                    datosExportacion: datosExportacion || {},
+                    observaciones: observaciones || null,
+                    datosPago: datosPago || {},
+                },
+                emisor: emisorConCredenciales,
+                tenantId: tenant.id,
+            });
+
+            // Guardar en BD directamente como CONTINGENCIA
+            const dteCreado = await dteRepository.crear({
+                tenantId: tenant.id,
+                emisorId: emisor.id,
+                codigoGeneracion: contRes.documentoDTE.identificacion.codigoGeneracion,
+                numeroControl: contRes.documentoDTE.identificacion.numeroControl,
+                tipoDte,
+                version: contRes.documentoDTE.identificacion.version,
+                ambiente: emisorConCredenciales.ambiente,
+                fechaEmision: contRes.documentoDTE.identificacion.fecEmi,
+                horaEmision: contRes.documentoDTE.identificacion.horEmi,
+                receptor: {
+                    tipoDocumento: receptor ? (receptor.tipoDocumento || '36') : '36',
+                    numDocumento: receptor ? (receptor.numDocumento || receptor.nit) : '00000000000000',
+                    nombre: receptor ? receptor.nombre : 'CONSUMIDOR FINAL',
+                    correo: receptor ? receptor.correo : null,
+                },
+                totales: {
+                    totalGravada: contRes.documentoDTE.resumen.totalGravada ?? contRes.documentoDTE.resumen.totalCompra ?? 0,
+                    totalIva: contRes.documentoDTE.resumen.totalIva || 0,
+                    totalPagar: contRes.documentoDTE.resumen.totalPagar,
+                },
+                jsonOriginal: contRes.documentoDTE,
+            });
+
+            const dteFinal = await dteRepository.actualizarEstado(dteCreado.id, {
+                status: 'CONTINGENCIA',
+                jsonFirmado: contRes.documentoFirmado,
+                tipoContingencia: '4',
+                motivoContin: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+                fechaLimiteTransmision: contRes.fechaLimiteTransmision,
+                observaciones: 'Modo de Contingencia directo activado por Circuit Breaker abierto.',
+            });
+
+            return res.status(201).json({
+                exito: true,
+                mensaje: 'Factura emitida en modo contingencia (pendiente de sello MH)',
+                datos: {
+                    codigoGeneracion: dteFinal.codigoGeneracion,
+                    numeroControl: dteFinal.numeroControl,
+                    estado: 'CONTINGENCIA',
+                    fechaLimiteTransmision: dteFinal.fechaLimiteTransmision,
+                },
+            });
+        }
+
+        // ═══════════════════════════════════════
         // PASO 1: Construir documento DTE
         // ═══════════════════════════════════════
         const documentoDTE = dteOrchestrator.construirDocumento({
@@ -87,10 +156,10 @@ const crearFactura = async (req, res, next) => {
             fechaEmision: documentoDTE.identificacion.fecEmi,
             horaEmision: documentoDTE.identificacion.horEmi,
             receptor: {
-                tipoDocumento: receptor.tipoDocumento || '36',
-                numDocumento: receptor.numDocumento || receptor.nit,
-                nombre: receptor.nombre,
-                correo: receptor.correo,
+                tipoDocumento: receptor ? (receptor.tipoDocumento || '36') : '36',
+                numDocumento: receptor ? (receptor.numDocumento || receptor.nit) : '00000000000000',
+                nombre: receptor ? receptor.nombre : 'CONSUMIDOR FINAL',
+                correo: receptor ? receptor.correo : null,
             },
             totales: {
                 totalGravada: documentoDTE.resumen.totalGravada ?? documentoDTE.resumen.totalCompra ?? 0,
@@ -106,11 +175,70 @@ const crearFactura = async (req, res, next) => {
         // ═══════════════════════════════════════
         // PASO 3: Firmar y enviar a Hacienda
         // ═══════════════════════════════════════
-        const resultado = await dteOrchestrator.firmarYEnviar({
-            documentoDTE,
-            emisor: emisorConCredenciales,
-            tipoDte,
-        });
+        let resultado;
+        try {
+            resultado = await dteOrchestrator.firmarYEnviar({
+                documentoDTE,
+                emisor: emisorConCredenciales,
+                tipoDte,
+            });
+        } catch (envioError) {
+            logger.error('Error durante la firma y envío normal', { error: envioError.message });
+            resultado = {
+                exito: false,
+                esErrorComunicacion: true,
+                error: envioError,
+                mensaje: envioError.message,
+            };
+        }
+
+        // ═══════════════════════════════════════
+        // FALLBACK AUTOMÁTICO A CONTINGENCIA EN CASO DE ERROR DE COMUNICACIÓN
+        // ═══════════════════════════════════════
+        if (resultado.esErrorComunicacion) {
+            logger.warn('Error de comunicación con Hacienda. Transicionando DTE a contingencia.', { dteId });
+            
+            const contRes = await dteOrchestrator.procesarContingencia({
+                datos: {
+                    receptor,
+                    items,
+                    tipoDte,
+                    correlativo,
+                    condicionOperacion: condicionOperacion || 1,
+                    documentoRelacionado: documentoRelacionado || null,
+                    datosExportacion: datosExportacion || {},
+                    observaciones: observaciones || null,
+                    datosPago: datosPago || {},
+                },
+                emisor: emisorConCredenciales,
+                tenantId: tenant.id,
+                codigoGeneracion: documentoDTE.identificacion.codigoGeneracion,
+                numeroControl: documentoDTE.identificacion.numeroControl,
+                fecEmi: documentoDTE.identificacion.fecEmi,
+                horEmi: documentoDTE.identificacion.horEmi,
+            });
+
+            const dteFinal = await dteRepository.actualizarEstado(dteId, {
+                status: 'CONTINGENCIA',
+                jsonOriginal: contRes.documentoDTE,
+                jsonFirmado: contRes.documentoFirmado,
+                tipoContingencia: '4',
+                motivoContin: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+                fechaLimiteTransmision: contRes.fechaLimiteTransmision,
+                observaciones: 'Modo de Contingencia activado por fallo en la comunicación con Hacienda.',
+            });
+
+            return res.status(201).json({
+                exito: true,
+                mensaje: 'Factura emitida en modo contingencia por error de comunicación (pendiente de sello MH)',
+                datos: {
+                    codigoGeneracion: dteFinal.codigoGeneracion,
+                    numeroControl: dteFinal.numeroControl,
+                    estado: 'CONTINGENCIA',
+                    fechaLimiteTransmision: dteFinal.fechaLimiteTransmision,
+                },
+            });
+        }
 
         // ═══════════════════════════════════════
         // PASO 4: Actualizar estado en BD
@@ -126,12 +254,6 @@ const crearFactura = async (req, res, next) => {
 
                 // Asíncrono (Fire-and-forget) para no impactar la latencia de respuesta
                 emailDelivery.enviarCorreoFactura({ dte: dteActualizado, emisor });
-            } else if (resultado.esErrorComunicacion) {
-                await dteRepository.actualizarEstado(dteId, {
-                    status: 'ERROR',
-                    observaciones: 'Fallo de comunicación/Hacienda caída. Encolado para reintento automático.',
-                    errorLog: JSON.stringify(resultado.error || resultado.detalle || resultado.mensaje),
-                });
             } else {
                 await dteRepository.actualizarEstado(dteId, {
                     status: 'RECHAZADO',
@@ -156,13 +278,6 @@ const crearFactura = async (req, res, next) => {
                 exito: true,
                 mensaje: 'Factura procesada exitosamente',
                 datos: resultado.datos,
-            });
-        } else if (resultado.esErrorComunicacion) {
-            res.status(202).json({
-                exito: true,
-                enCola: true,
-                mensaje: 'Guardada y en cola de envío',
-                codigoGeneracion: documentoDTE.identificacion.codigoGeneracion,
             });
         } else {
             res.status(400).json({

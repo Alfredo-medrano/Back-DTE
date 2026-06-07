@@ -142,6 +142,11 @@ model Dte {
   version          Int    @default(1)
   ambiente         String @default("00")
 
+  // Contingencia (MH v2.0)
+  tipoContingencia String?
+  motivoContin     String?
+  fechaLimiteTransmision DateTime?
+
   // Fechas
   fechaEmision DateTime
   horaEmision  String
@@ -188,6 +193,8 @@ model Dte {
   @@index([emisorId, fechaEmision, status])
   // Índice para retry queue
   @@index([status, intentos])
+  // Índice para el worker de contingencia
+  @@index([status, fechaLimiteTransmision])
   @@map("dtes")
 }
 
@@ -211,6 +218,7 @@ enum DteStatus {
   RECHAZADO // MH rechazó
   ERROR // Error interno
   ANULADO // Invalidado
+  CONTINGENCIA // Emitido localmente bajo contingencia, pendiente de sello MH
 }
 
 // ========================================

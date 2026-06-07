@@ -70,10 +70,17 @@ const cleanNrc = (valorRaw) => {
  */
 const construirIdentificacion = (tipoDte, emisor, correlativo) => {
     const configDte = obtenerConfigDTE(tipoDte);
-    const codigoGeneracion = generarCodigoGeneracion();
+    const codigoGeneracion = emisor.contingencia?.codigoGeneracion || generarCodigoGeneracion();
     const codigoEstablecimiento = (emisor.codEstableMH || 'M001') + (emisor.codPuntoVentaMH || 'P001');
-    const numeroControl = generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
-    const { fecha, hora } = generarTimestampEmision();
+    const numeroControl = emisor.contingencia?.numeroControl || generarNumeroControl(tipoDte, codigoEstablecimiento, correlativo);
+    
+    const { fecha: currentFecha, hora: currentHora } = generarTimestampEmision();
+    const fecha = emisor.contingencia?.fecEmi || currentFecha;
+    const hora = emisor.contingencia?.horEmi || currentHora;
+
+    const tipoContingencia = emisor.contingencia?.tipo || null;
+    const motivoContin = emisor.contingencia?.motivo || null;
+    const tipoOperacion = tipoContingencia ? 2 : 1;
 
     return {
         version: configDte.version,
@@ -82,9 +89,9 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
         numeroControl,
         codigoGeneracion,
         tipoModelo: 1,
-        tipoOperacion: 1,
-        tipoContingencia: null,
-        motivoContin: null,
+        tipoOperacion,
+        tipoContingencia,
+        motivoContin,
         fecEmi: fecha,
         horEmi: hora,
         tipoMoneda: 'USD',

@@ -43,6 +43,7 @@ v2Router.get('/mi-cuenta/emisores', miCuentaController.obtenerMisEmisores);
 v2Router.get('/mi-cuenta/api-keys', miCuentaController.listarMisApiKeys);
 v2Router.post('/mi-cuenta/api-keys', miCuentaController.crearMiApiKey);
 v2Router.delete('/mi-cuenta/api-keys/:apiKeyId', miCuentaController.revocarMiApiKey);
+v2Router.get('/mi-cuenta/alertas-contingencia', miCuentaController.alertasContingencia);
 
 // Facturación con validación + límite de plan
 v2Router.post('/facturar',

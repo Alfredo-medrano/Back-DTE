@@ -89,5 +89,33 @@ module.exports = {
             out_file: './logs/worker-out.log',
             log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
         },
+
+        // ========================================
+        // WORKER DE CONTINGENCIA
+        // ========================================
+        {
+            name: 'dte-contingency-worker',
+            script: './src/modules/dte/workers/contingency-worker.js',
+            instances: 1, // Solo una instancia para evitar duplicados
+            exec_mode: 'fork',
+
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '512M',
+
+            env: {
+                NODE_ENV: 'development',
+            },
+            env_staging: {
+                NODE_ENV: 'staging',
+            },
+            env_production: {
+                NODE_ENV: 'production',
+            },
+
+            error_file: './logs/contingency-worker-error.log',
+            out_file: './logs/contingency-worker-out.log',
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+        },
     ],
 };

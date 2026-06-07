@@ -13,6 +13,7 @@
 const { tenantService, apiKeyService } = require('../../iam/services');
 const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { crearApiKeySchema } = require('../../iam/dtos/admin.schema');
+const { prisma } = require('../../../shared/db');
 
 /**
  * Obtener información de la cuenta propia (Tenant)
@@ -115,10 +116,50 @@ const obtenerMisEmisores = async (req, res, next) => {
     }
 };
 
+/**
+ * Obtener alertas de contingencia para el tenant autenticado
+ * GET /api/dte/v2/mi-cuenta/alertas-contingencia
+ */
+const alertasContingencia = async (req, res, next) => {
+    try {
+        const tenantId = req.tenant.id;
+
+        // Buscar DTEs en contingencia
+        const dtesContingencia = await prisma.dte.findMany({
+            where: {
+                tenantId,
+                status: 'CONTINGENCIA',
+            },
+            orderBy: {
+                fechaLimiteTransmision: 'asc',
+            },
+            select: {
+                fechaLimiteTransmision: true,
+            },
+        });
+
+        const contingenciaActiva = dtesContingencia.length > 0;
+        const cantidadPendientes = dtesContingencia.length;
+        const proximoVencer = contingenciaActiva ? dtesContingencia[0].fechaLimiteTransmision : null;
+
+        res.json({
+            exito: true,
+            datos: {
+                contingenciaActiva,
+                cantidadPendientes,
+                proximoVencer,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     obtenerMiCuenta,
     obtenerMisEmisores,
     listarMisApiKeys,
     crearMiApiKey,
     revocarMiApiKey,
+    alertasContingencia,
 };

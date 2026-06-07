@@ -194,10 +194,62 @@ const reintentarEnvio = async ({ dte, emisor }) => {
     });
 };
 
+/**
+ * Crea y firma un DTE bajo contingencia (MH offline)
+ */
+const procesarContingencia = async ({
+    datos,
+    emisor,
+    tenantId,
+    codigoGeneracion = null,
+    numeroControl = null,
+    fecEmi = null,
+    horEmi = null,
+}) => {
+    // Inject contingency info in emisor object
+    const emisorConContingencia = {
+        ...emisor,
+        contingencia: {
+            tipo: '4',
+            motivo: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+            codigoGeneracion,
+            numeroControl,
+            fecEmi,
+            horEmi,
+        }
+    };
+
+    // Build the contingency DTE
+    const documentoContingencia = construirDocumento({
+        datos,
+        emisor: emisorConContingencia,
+        tenantId,
+    });
+
+    // Sign it locally (will succeed since Docker firmador is local)
+    logger.info('Firmando DTE en modo contingencia', { codigoGeneracion: documentoContingencia.identificacion.codigoGeneracion });
+    const resultadoFirma = await signerService.firmarDocumento({
+        documento: documentoContingencia,
+        nit: emisor.nit,
+        clavePrivada: emisor.mhClavePrivada,
+    });
+
+    if (!resultadoFirma.exito) {
+        throw new Error(`Error al firmar documento en contingencia: ${resultadoFirma.error}`);
+    }
+
+    return {
+        documentoDTE: documentoContingencia,
+        documentoFirmado: resultadoFirma.firma,
+        fechaLimiteTransmision: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+    };
+};
+
 module.exports = {
     construirDocumento,
     firmarYEnviar,
     procesarFactura,
     transmitirDirecto,
     reintentarEnvio,
+    procesarContingencia,
 };

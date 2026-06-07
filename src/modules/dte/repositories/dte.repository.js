@@ -64,7 +64,18 @@ const crear = async (datos) => {
  * @param {object} datos - Datos a actualizar
  */
 const actualizarEstado = async (id, datos) => {
-    const { status, selloRecibido, fechaProcesamiento, observaciones, jsonFirmado, errorLog } = datos;
+    const { 
+        status, 
+        selloRecibido, 
+        fechaProcesamiento, 
+        observaciones, 
+        jsonFirmado, 
+        errorLog,
+        jsonOriginal,
+        tipoContingencia,
+        motivoContin,
+        fechaLimiteTransmision
+    } = datos;
 
     // Hacienda devuelve fecha en formato "dd/MM/yyyy HH:mm:ss", parsear manualmente
     let fechaProc;
@@ -92,6 +103,10 @@ const actualizarEstado = async (id, datos) => {
             observaciones: observaciones || undefined,
             jsonFirmado: jsonFirmado || undefined,
             errorLog: errorLog || undefined,
+            jsonOriginal: jsonOriginal || undefined,
+            tipoContingencia: tipoContingencia || undefined,
+            motivoContin: motivoContin || undefined,
+            fechaLimiteTransmision: fechaLimiteTransmision || undefined,
             intentos: { increment: 1 },
         },
     }));
