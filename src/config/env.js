@@ -22,8 +22,9 @@ const config = {
 
     // Ministerio de Hacienda
     mh: {
-        apiUrl: process.env.MH_API_URL || 'https://apitest.dtes.mh.gob.sv',
-        authUrl: process.env.MH_AUTH_URL || 'https://apitest.dtes.mh.gob.sv/seguridad/auth',
+        // SECURITY FIX (C5): No fallback — production requires explicit config via env-validator
+        apiUrl: process.env.MH_API_URL || (process.env.NODE_ENV === 'production' ? undefined : 'https://apitest.dtes.mh.gob.sv'),
+        authUrl: process.env.MH_AUTH_URL || (process.env.NODE_ENV === 'production' ? undefined : 'https://apitest.dtes.mh.gob.sv/seguridad/auth'),
         claveApi: process.env.CLAVE_API,
         clavePublica: process.env.CLAVE_PUBLICA,
         clavePrivada: process.env.CLAVE_PRIVADA,
@@ -35,8 +36,8 @@ const config = {
 
     // Emisor
     emisor: {
-        nit: process.env.NIT_EMISOR,
-        ambiente: process.env.AMBIENTE || '00', // 00 = Pruebas
+        // SECURITY FIX (C5): No fallback to '00' in production
+        ambiente: process.env.AMBIENTE || (process.env.NODE_ENV === 'production' ? undefined : '00'),
     },
 };
 

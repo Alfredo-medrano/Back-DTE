@@ -55,11 +55,13 @@
     "prisma": "^5.22.0",
     "puppeteer": "^25.0.4",
     "qrcode": "^1.5.4",
+    "rate-limiter-flexible": "^11.1.1",
     "uuid": "^13.0.0",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "vitest": "^4.1.8"
   }
 }

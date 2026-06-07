@@ -1,0 +1,81 @@
+# ========================================
+# DOCKER COMPOSE — DTE El Salvador Backend
+# ========================================
+# Infra fix (A3): Reproducible environment for the signing service.
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose up firmador    # Start only the signer
+#   docker compose logs firmador  # View signer logs
+#
+# The SVFE signer image must be available locally or in a private registry.
+# Contact the MH integration team for the correct image tag.
+
+services:
+  # ────────────────────────────────────────────────────────
+  # FIRMADOR SVFE — Firma electrónica de DTEs
+  # ────────────────────────────────────────────────────────
+  # CRITICAL DEPENDENCY: Without this service, 100% of DTE
+  # emissions fail. The backend connects to localhost:8113.
+  firmador:
+    # TODO: Replace with the exact SVFE image from your private registry
+    # Example: registry.example.com/svfe-firmador:latest
+    image: ${SVFE_IMAGE:-svfe/firmador:latest}
+    container_name: dte-firmador
+    ports:
+      - "8113:8113"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8113/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    environment:
+      # Configure as needed for your SVFE installation
+      - TZ=America/El_Salvador
+    volumes:
+      # Mount certificates directory if needed by the signer
+      - ./certs:/app/certs:ro
+
+  # ────────────────────────────────────────────────────────
+  # POSTGRESQL — Base de datos (solo desarrollo local)
+  # ────────────────────────────────────────────────────────
+  # In production, use Neon serverless or managed PostgreSQL.
+  postgres:
+    image: postgres:16-alpine
+    container_name: dte-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: dte_user
+      POSTGRES_PASSWORD: dte_local_dev_password
+      POSTGRES_DB: dte_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dte_user -d dte_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ────────────────────────────────────────────────────────
+  # REDIS — Cache distribuido y rate limiting
+  # ────────────────────────────────────────────────────────
+  # Required for distributed rate limiting (C4) and MH token cache.
+  redis:
+    image: redis:7-alpine
+    container_name: dte-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+volumes:
+  pgdata:

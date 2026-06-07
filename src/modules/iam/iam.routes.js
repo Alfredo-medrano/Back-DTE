@@ -20,21 +20,12 @@ const { auditMiddleware } = require('../../shared/middleware/audit-logger');
 // ────────────────────────────────────────────────────────
 // MIDDLEWARE: Guard de Admin Key
 // Protege TODAS las rutas de este router
+//
+// SECURITY FIX (A1): Removed JWT bypass that allowed ANY
+// authenticated user to access admin routes (privilege escalation).
+// Admin routes now EXCLUSIVELY require X-Admin-Key.
 // ────────────────────────────────────────────────────────
 const adminGuard = (req, res, next) => {
-    // Soporte transparente para JWT Frontend
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer eyJ')) {
-        try {
-            const token = authHeader.substring(7);
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.tenantId = decoded.tenantId;
-            return next();
-        } catch(err) {
-            // Ignorar para seguir probando admin key
-        }
-    }
-
     const adminKey = process.env.ADMIN_SECRET_KEY;
     const headerKey = req.headers['x-admin-key'];
 

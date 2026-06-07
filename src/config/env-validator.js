@@ -95,6 +95,45 @@ const validarEntorno = () => {
         process.exit(1);
     }
 
+    // ────────────────────────────────────────────────────────
+    // SECURITY FIX (C5): Production environment guard
+    // Prevents DTEs from being sent to the MH test API in production.
+    // If these conditions fail, the server MUST NOT start.
+    // ────────────────────────────────────────────────────────
+    if (process.env.NODE_ENV === 'production') {
+        const erroresProduccion = [];
+        const ambiente = process.env.AMBIENTE;
+        const mhUrl = process.env.MH_API_URL || '';
+
+        if (ambiente !== '01') {
+            erroresProduccion.push(`  ✗ AMBIENTE — En producción debe ser "01" (actual: "${ambiente || 'no definido'}")`);
+        }
+        if (mhUrl.includes('apitest')) {
+            erroresProduccion.push(`  ✗ MH_API_URL — En producción NO debe apuntar a apitest (actual: "${mhUrl}")`);
+        }
+        if (!mhUrl) {
+            erroresProduccion.push(`  ✗ MH_API_URL — Debe estar definido en producción`);
+        }
+
+        if (erroresProduccion.length > 0) {
+            console.error('');
+            console.error('╔══════════════════════════════════════════════════╗');
+            console.error('║  🚨 PRODUCCIÓN: Configuración de ambiente errada ║');
+            console.error('╚══════════════════════════════════════════════════╝');
+            console.error('');
+            console.error('El servidor está en NODE_ENV=production pero la configuración');
+            console.error('del Ministerio de Hacienda apunta al ambiente INCORRECTO:');
+            console.error('');
+            erroresProduccion.forEach(e => console.error(e));
+            console.error('');
+            console.error('⚠️  Si se inicia así, los DTEs serán fiscalmente INVÁLIDOS.');
+            console.error('');
+            process.exit(1);
+        }
+
+        console.info('  ✓ Guardia de producción: AMBIENTE=01, MH_API_URL apunta a producción.');
+    }
+
     // Verificar opcionales y mostrar advertencias
     for (const variable of OPCIONALES_CON_ADVERTENCIA) {
         if (!process.env[variable.key]) {

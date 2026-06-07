@@ -2,108 +2,149 @@
  * ========================================
  * MIDDLEWARE: RATE LIMITER
  * ========================================
- * Limita peticiones por API Key usando caché en memoria
- */
-
-const { TooManyRequestsError } = require('../errors');
-
-/**
- * Cache de rate limiting en memoria
- * Map<string, { count: number, resetTime: number }>
+ * SECURITY FIX (C4): Uses rate-limiter-flexible with Redis backend
+ * when REDIS_URL is configured. Falls back to in-memory for development.
  *
- * ⚠️  LIMITACIÓN: En entornos PM2 cluster (instances > 1), cada proceso
- * worker tiene su propio Map aislado. El límite efectivo será:
- *   rateLimit × númeroDeWorkers
- * Para rate limiting distribuido confiable, migrar a:
- *   `rate-limiter-flexible` con backend Redis (ioredis).
+ * In PM2 cluster mode with N workers, the Redis backend ensures the
+ * rate limit is globally enforced (not N × rateLimit as before).
+ *
+ * Pattern: Replicates the conditional Redis/memory init from
+ * mh-sender.service.js for consistency.
  */
-const rateLimitCache = new Map();
 
-/**
- * Limpieza periódica del caché (cada 5 minutos)
- */
-setInterval(() => {
-    const ahora = Date.now();
-    for (const [key, value] of rateLimitCache.entries()) {
-        if (value.resetTime < ahora) {
-            rateLimitCache.delete(key);
-        }
+const { RateLimiterRedis, RateLimiterMemory } = require('rate-limiter-flexible');
+const { TooManyRequestsError } = require('../errors');
+const logger = require('../logger');
+
+// ────────────────────────────────────────────────────────
+// Conditional backend: Redis (production) or Memory (dev)
+// ────────────────────────────────────────────────────────
+let rateLimiterBackend;
+let authRateLimiterBackend;
+
+const initRateLimiters = () => {
+    const redisUrl = process.env.REDIS_URL;
+
+    if (redisUrl) {
+        const Redis = require('ioredis');
+        const redisClient = new Redis(redisUrl, {
+            retryStrategy: (times) => Math.min(times * 50, 2000),
+            maxRetriesPerRequest: 3,
+            enableOfflineQueue: false,
+        });
+
+        redisClient.on('connect', () => logger.info('RateLimiter: Conectado a Redis'));
+        redisClient.on('error', (err) => logger.error('RateLimiter: Redis error', { error: err.message }));
+
+        // Per-API-Key limiter (tenant-scoped)
+        rateLimiterBackend = new RateLimiterRedis({
+            storeClient: redisClient,
+            keyPrefix: 'rl:tenant',
+            points: 100,      // Default; overridden per-request from tenant.rateLimit
+            duration: 60,      // 1 minute window
+        });
+
+        // Auth endpoint limiter (per-IP, stricter)
+        authRateLimiterBackend = new RateLimiterRedis({
+            storeClient: redisClient,
+            keyPrefix: 'rl:auth',
+            points: 10,        // 10 attempts per minute
+            duration: 60,
+        });
+
+        logger.info('RateLimiter: Usando Redis backend (distribuido, multi-worker safe)');
+    } else {
+        // Fallback for development — single-process only
+        rateLimiterBackend = new RateLimiterMemory({
+            keyPrefix: 'rl:tenant',
+            points: 100,
+            duration: 60,
+        });
+
+        authRateLimiterBackend = new RateLimiterMemory({
+            keyPrefix: 'rl:auth',
+            points: 10,
+            duration: 60,
+        });
+
+        logger.warn('RateLimiter: Usando backend en memoria (solo dev/single-instance)');
     }
-}, 5 * 60 * 1000);
+};
 
-/**
- * Rate limiter por API Key
- * Usa el límite configurado en la API Key del tenant
- */
-const rateLimiter = (req, res, next) => {
+// Initialize on module load
+initRateLimiters();
+
+// ────────────────────────────────────────────────────────
+// Rate limiter per API Key (tenant-scoped)
+// ────────────────────────────────────────────────────────
+const rateLimiter = async (req, res, next) => {
     try {
-        // Sin tenant context, usar límite genérico por IP
+        // Without tenant context, skip (public routes have their own limiter)
         if (!req.tenant) {
             return next();
         }
 
         const apiKeyId = req.headers.authorization?.substring(0, 20) || 'unknown';
-        const limite = req.tenant.rateLimit || 100; // Requests por minuto
-        const ventana = 60 * 1000; // 1 minuto
+        const limite = req.tenant.rateLimit || 100;
+        const cacheKey = apiKeyId;
 
-        const cacheKey = `rate:${apiKeyId}`;
-        const ahora = Date.now();
+        try {
+            const rateLimiterRes = await rateLimiterBackend.consume(cacheKey, 1, { points: limite });
 
-        let registro = rateLimitCache.get(cacheKey);
+            // Informational headers
+            res.set({
+                'X-RateLimit-Limit': limite,
+                'X-RateLimit-Remaining': rateLimiterRes.remainingPoints,
+                'X-RateLimit-Reset': Math.ceil((Date.now() + rateLimiterRes.msBeforeNext) / 1000),
+            });
 
-        if (!registro || registro.resetTime < ahora) {
-            // Nueva ventana
-            registro = {
-                count: 0,
-                resetTime: ahora + ventana,
-            };
-        }
+            next();
+        } catch (rateLimiterRes) {
+            // rate-limiter-flexible throws on limit exceeded
+            if (rateLimiterRes instanceof Error) {
+                // Actual error (Redis down, etc.) — fail open
+                logger.error('RateLimiter error, allowing request', { error: rateLimiterRes.message });
+                return next();
+            }
 
-        registro.count++;
-        rateLimitCache.set(cacheKey, registro);
+            const segundosRestantes = Math.ceil(rateLimiterRes.msBeforeNext / 1000);
 
-        // Headers informativos
-        res.set({
-            'X-RateLimit-Limit': limite,
-            'X-RateLimit-Remaining': Math.max(0, limite - registro.count),
-            'X-RateLimit-Reset': Math.ceil(registro.resetTime / 1000),
-        });
+            res.set({
+                'X-RateLimit-Limit': limite,
+                'X-RateLimit-Remaining': 0,
+                'X-RateLimit-Reset': Math.ceil((Date.now() + rateLimiterRes.msBeforeNext) / 1000),
+                'Retry-After': segundosRestantes,
+            });
 
-        if (registro.count > limite) {
-            const segundosRestantes = Math.ceil((registro.resetTime - ahora) / 1000);
-            throw new TooManyRequestsError(
+            next(new TooManyRequestsError(
                 `Límite de ${limite} peticiones/minuto excedido. Reintenta en ${segundosRestantes}s`,
                 'RATE_LIMIT_EXCEEDED'
-            );
+            ));
         }
-
-        next();
     } catch (error) {
         next(error);
     }
 };
 
-/**
- * Rate limiter configurable
- * @param {number} maxRequests - Máximo de peticiones
- * @param {number} windowMs - Ventana en milisegundos
- */
+// ────────────────────────────────────────────────────────
+// Configurable rate limiter (for auth endpoints, etc.)
+// ────────────────────────────────────────────────────────
 const rateLimiterCustom = (maxRequests = 100, windowMs = 60000) => {
-    return (req, res, next) => {
+    return async (req, res, next) => {
         const key = req.ip || 'unknown';
-        const cacheKey = `custom:${key}`;
-        const ahora = Date.now();
 
-        let registro = rateLimitCache.get(cacheKey);
+        try {
+            await authRateLimiterBackend.consume(key, 1, {
+                points: maxRequests,
+                duration: Math.ceil(windowMs / 1000),
+            });
+            next();
+        } catch (rateLimiterRes) {
+            if (rateLimiterRes instanceof Error) {
+                logger.error('AuthRateLimiter error, allowing request', { error: rateLimiterRes.message });
+                return next();
+            }
 
-        if (!registro || registro.resetTime < ahora) {
-            registro = { count: 0, resetTime: ahora + windowMs };
-        }
-
-        registro.count++;
-        rateLimitCache.set(cacheKey, registro);
-
-        if (registro.count > maxRequests) {
             return res.status(429).json({
                 exito: false,
                 error: {
@@ -112,8 +153,6 @@ const rateLimiterCustom = (maxRequests = 100, windowMs = 60000) => {
                 },
             });
         }
-
-        next();
     };
 };
 

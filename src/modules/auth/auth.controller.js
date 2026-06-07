@@ -32,37 +32,25 @@ const login = async (req, res, next) => {
         const response = await mhAuthClient.post('', params);
 
         if (response.data?.status === 'OK' && response.data?.body?.token) {
-            // MH Auth successful. Find or create Emisor and Tenant.
-            let emisor = await prisma.emisor.findUnique({ where: { nit } });
-            
+            // MH Auth successful. Find existing Emisor (NO auto-creation).
+            const emisor = await prisma.emisor.findUnique({ where: { nit } });
+
+            // SECURITY FIX (C3): Login NEVER auto-creates tenants.
+            // Unregistered NITs must go through POST /api/auth/register first.
             if (!emisor) {
-                // Auto-create Tenant and Emisor using tenantService (encrypts credentials)
-                const tenant = await prisma.tenant.create({
-                    data: {
-                        nombre: `Tenant de ${nit}`,
-                        email: `${nit}@placeholder.com`,
-                        activo: true,
-                        tosAcceptedAt: new Date(),
-                    }
+                return res.status(401).json({
+                    exito: false,
+                    codigo: 'EMISOR_NO_REGISTRADO',
+                    mensaje: 'No existe una cuenta asociada a este NIT. Regístrate primero en /registro.',
                 });
-                emisor = await tenantService.crearEmisor(tenant.id, {
-                    nit,
-                    nrc: 'PENDIENTE',
-                    nombre: `Emisor ${nit}`,
-                    codActividad: '0000',
-                    descActividad: 'POR DEFINIR',
-                    complemento: 'SIN DIRECCION',
-                    telefono: '00000000',
-                    correo: `${nit}@placeholder.com`,
-                    ambiente: ambiente || '00',
-                    mhClaveApi: passwordApi,
-                    mhClavePrivada: 'PENDIENTE',
-                });
-            } else if (emisor.mhClaveApi !== tenantService.encriptar(passwordApi)) {
-                // SECURITY: encriptar la clave antes de guardar
-                await prisma.emisor.update({
-                    where: { id: emisor.id },
-                    data: { mhClaveApi: tenantService.encriptar(passwordApi) }
+            }
+
+            // Verify account is active
+            if (!emisor.activo) {
+                return res.status(403).json({
+                    exito: false,
+                    codigo: 'CUENTA_INACTIVA',
+                    mensaje: 'Tu cuenta está desactivada. Contacta al administrador.',
                 });
             }
 
@@ -72,6 +60,8 @@ const login = async (req, res, next) => {
                 { expiresIn: '24h' }
             );
 
+            // SECURITY FIX (C1): Token ONLY via httpOnly cookie — never in response body.
+            // Eliminates XSS token theft via localStorage.
             res.cookie('dte_api_key', token, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
@@ -79,9 +69,8 @@ const login = async (req, res, next) => {
                 maxAge: 24 * 60 * 60 * 1000 // 24h
             });
 
-            // Adicionalmente se podría poner un emisorId en web normal para que el front lo use en peticiones
             res.cookie('dte_emisor_id', emisor.id, {
-                httpOnly: false, // Frontend puede leerlo para X-Emisor-Id o UI
+                httpOnly: false, // Frontend reads this for UI display only
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
                 maxAge: 24 * 60 * 60 * 1000
@@ -89,7 +78,17 @@ const login = async (req, res, next) => {
 
             logger.info('Login exitoso', { nit, emisorId: emisor.id });
 
-            return res.json({ exito: true, emisor, token });
+            // SECURITY FIX (C1): No token in body — only safe, non-sensitive emisor data
+            return res.json({
+                exito: true,
+                emisor: {
+                    id: emisor.id,
+                    nit: emisor.nit,
+                    nombre: emisor.nombre,
+                    nombreComercial: emisor.nombreComercial,
+                    ambiente: emisor.ambiente,
+                },
+            });
         }
 
         return res.status(401).json({ exito: false, error: 'Credenciales MH inválidas', detalles: response.data });

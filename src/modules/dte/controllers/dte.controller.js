@@ -470,17 +470,36 @@ const probarAutenticacion = async (req, res, next) => {
 };
 
 /**
- * Anular un DTE ya procesado
+ * Anular un DTE ya procesado (Invalidación v2 del MH)
  * POST /api/dte/v2/factura/:codigoGeneracion/anular
+ *
+ * Request body:
+ *   - motivoAnulacion: string (texto descriptivo del motivo)
+ *   - tipoAnulacion: number (1=Reemplazo, 2=Error en datos, 3=Otro) — default 2
+ *   - nombreSolicita: string (nombre de quien solicita)
+ *   - tipoSolicita: string (tipo doc del solicitante, default '36' NIT)
+ *   - numDocSolicita: string (número de documento del solicitante)
+ *   - nombreResponsable: string (nombre del responsable, default = emisor)
+ *   - tipoResponsable: string (tipo doc del responsable, default '36')
+ *   - numDocResponsable: string (número doc del responsable, default = NIT emisor)
  */
 const anularDTE = async (req, res, next) => {
     try {
         const { codigoGeneracion } = req.params;
-        const { motivoAnulacion, nombreSolicita, tipoSolicita, numDocSolicita, nombreResponsable, tipoResponsable, numDocResponsable } = req.body;
+        const {
+            motivoAnulacion,
+            tipoAnulacion,
+            nombreSolicita,
+            tipoSolicita,
+            numDocSolicita,
+            nombreResponsable,
+            tipoResponsable,
+            numDocResponsable,
+        } = req.body;
         const { emisor } = req;
 
         if (!motivoAnulacion) {
-            throw new BadRequestError('motivoAnulacion es requerido', 'DATOS_INCOMPLETOS');
+            throw new BadRequestError('motivoAnulacion es requerido (texto descriptivo del motivo)', 'DATOS_INCOMPLETOS');
         }
 
         // Buscar DTE local — SIEMPRE filtrar por emisorId (multi-tenant)
@@ -496,12 +515,29 @@ const anularDTE = async (req, res, next) => {
             );
         }
 
+        if (!dteLocal.selloRecibido) {
+            throw new BadRequestError(
+                'El DTE no tiene sello de recepción de Hacienda. No se puede invalidar.',
+                'SIN_SELLO'
+            );
+        }
+
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
-        // Construir documento de anulación (Invalidación v2)
+        // Construir documento de invalidación (Versión 2 — Anexo II MH)
         const fechaActual = generarFechaActual();
         const horaActual = generarHoraEmision();
         const codigoGeneracionAnulacion = generarCodigoGeneracion();
+
+        // FIX: Use flat Prisma model fields (not nested objects)
+        // DB columns: totalIva, receptorTipoDoc, receptorNumDoc, receptorNombre
+        const montoIva = dteLocal.totalIva != null ? parseFloat(dteLocal.totalIva) : 0.00;
+        const tipoDocReceptor = dteLocal.receptorTipoDoc || '36';
+        const numDocReceptor = dteLocal.receptorNumDoc || '00000000000000';
+        const nombreReceptor = dteLocal.receptorNombre || 'CONSUMIDOR FINAL';
+        const fechaEmi = dteLocal.fechaEmision instanceof Date
+            ? dteLocal.fechaEmision.toISOString().split('T')[0]
+            : String(dteLocal.fechaEmision).split('T')[0];
 
         const documentoAnulacion = {
             identificacion: {
@@ -509,46 +545,46 @@ const anularDTE = async (req, res, next) => {
                 ambiente: emisorConCredenciales.ambiente,
                 codigoGeneracion: codigoGeneracionAnulacion,
                 fecAnula: fechaActual,
-                horAnula: horaActual
+                horAnula: horaActual,
             },
             emisor: {
                 nit: emisorConCredenciales.nit,
                 nombre: emisorConCredenciales.nombre,
-                tipoEstablecimiento: emisorConCredenciales.tipoEstablecimiento,
+                tipoEstablecimiento: emisorConCredenciales.tipoEstablecimiento || '01',
                 nomEstablecimiento: emisorConCredenciales.nombreComercial || emisorConCredenciales.nombre,
                 codEstableMH: emisorConCredenciales.codEstableMH || null,
                 codEstable: emisorConCredenciales.codEstable || null,
                 codPuntoVentaMH: emisorConCredenciales.codPuntoVentaMH || null,
                 codPuntoVenta: emisorConCredenciales.codPuntoVenta || null,
                 telefono: emisorConCredenciales.telefono,
-                correo: emisorConCredenciales.correo
+                correo: emisorConCredenciales.correo,
             },
             documento: {
                 tipoDte: dteLocal.tipoDte,
                 codigoGeneracion: dteLocal.codigoGeneracion,
                 selloRecibido: dteLocal.selloRecibido,
                 numeroControl: dteLocal.numeroControl,
-                fecEmi: dteLocal.fechaEmision.toISOString().split('T')[0],
-                montoIva: dteLocal.totales?.totalIva != null ? parseFloat(dteLocal.totales.totalIva) : 0.00,
-                codigoGeneracionR: null,
-                tipoDocumento: dteLocal.receptor?.tipoDocumento || '36',
-                numDocumento: dteLocal.receptor?.numDocumento || dteLocal.receptor?.nit || '00000000000000',
-                nombre: dteLocal.receptor?.nombre || 'CONSUMIDOR FINAL'
+                fecEmi: fechaEmi,
+                montoIva,
+                codigoGeneracionR: null, // Código de documento de reemplazo (null si no aplica)
+                tipoDocumento: tipoDocReceptor,
+                numDocumento: numDocReceptor,
+                nombre: nombreReceptor,
             },
             motivo: {
-                tipoAnulacion: 2, // 2 = Anulacion de DTE (error en datos)
-                motivoAnulacion,
+                tipoAnulacion: tipoAnulacion || 2, // 2 = Error en datos (default)
+                motivoAnulacion: String(motivoAnulacion),
                 nombreResponsable: (nombreResponsable || emisorConCredenciales.nombre).toUpperCase(),
                 tipDocResponsable: tipoResponsable || '36',
                 numDocResponsable: numDocResponsable || emisorConCredenciales.nit,
-                nombreSolicita: (nombreSolicita || '').toUpperCase(),
-                tipDocSolicita: tipoSolicita || '36',
-                numDocSolicita: numDocSolicita || ''
-            }
+                nombreSolicita: (nombreSolicita || nombreReceptor).toUpperCase(),
+                tipDocSolicita: tipoSolicita || tipoDocReceptor,
+                numDocSolicita: numDocSolicita || numDocReceptor,
+            },
         };
 
-        // 1. Firmar el documento de anulación
-        logger.info('Firmando documento de anulación', { codigoGeneracion });
+        // 1. Firmar el documento de invalidación
+        logger.info('Firmando documento de invalidación', { codigoGeneracion });
         const resultadoFirma = await signer.firmarAnulacion({
             documento: documentoAnulacion,
             nit: emisorConCredenciales.nit,
@@ -556,13 +592,13 @@ const anularDTE = async (req, res, next) => {
         });
 
         if (!resultadoFirma.exito) {
-            throw new Error(`Error al firmar anulación: ${resultadoFirma.error}`);
+            throw new Error(`Error al firmar invalidación: ${resultadoFirma.error}`);
         }
 
         // 2. Enviar a Hacienda
-        logger.info('Transmitiendo anulación a Hacienda', { codigoGeneracion });
+        logger.info('Transmitiendo invalidación a Hacienda', { codigoGeneracion });
         const resultado = await mhSender.anularDTE({
-            documentoAnulacion: resultadoFirma.firma, // Pasamos el JWS firmado
+            documentoAnulacion: resultadoFirma.firma,
             ambiente: emisorConCredenciales.ambiente,
             credenciales: {
                 nit: emisorConCredenciales.nit,
@@ -615,9 +651,8 @@ const consultarFacturaPublica = async (req, res, next) => {
                 selloRecibido: dteLocal.selloRecibido,
                 fechaEmision: dteLocal.fechaEmision,
                 numeroControl: dteLocal.numeroControl,
-                observaciones: dteLocal.observaciones,
-                errorLog: dteLocal.errorLog,
-                emisor: dteLocal.emisor,
+                // SECURITY FIX (A2): errorLog and observaciones excluded from public endpoint
+                emisor: dteLocal.emisor, // Already filtered by repository select projection
             },
         });
     } catch (error) {

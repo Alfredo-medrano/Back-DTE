@@ -42,3 +42,8 @@ build/
 
 # QA Credentials (DO NOT COMMIT)
 .qa_keys.json
+
+# Temporary Debug/Test Scripts
+scratch*.js
+retry*.js
+scripts/bombardeo_*.js

@@ -155,21 +155,35 @@ const register = async (req, res) => {
             permisos: ['dte:create', 'dte:read'],
         });
 
-        // ── 8. Emitir JWT ──────────────────────────
+        // ── 8. Emitir JWT (SECURITY FIX C1: solo cookie httpOnly) ──
         const token = jwt.sign(
             { tenantId: tenant.id, emisorId: emisor.id },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
+        // SECURITY FIX (C1): Token ONLY via httpOnly cookie — never in response body
+        res.cookie('dte_api_key', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000, // 24h
+        });
+
+        res.cookie('dte_emisor_id', emisor.id, {
+            httpOnly: false,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000,
+        });
+
         // ── 9. Respuesta exitosa ───────────────────
-        // No devolver credenciales sensibles
+        // No devolver credenciales sensibles ni token en body
         const { mhClaveApi, mhClavePrivada, ...emisorSeguro } = emisor;
 
         return res.status(201).json({
             exito: true,
             mensaje: 'Cuenta creada exitosamente. ¡Bienvenido al sistema DTE!',
-            token,
             tenant: {
                 id: tenant.id,
                 nombre: tenant.nombre,

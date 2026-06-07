@@ -11,7 +11,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { dteController, statusController } = require('./controllers');
+const { dteController, statusController, miCuentaController } = require('./controllers');
 const {
     tenantContext,
     requierePermisos,
@@ -36,6 +36,13 @@ const v2Router = express.Router();
 // Pipeline de middlewares: Auth → Rate Limit
 v2Router.use(tenantContext);
 v2Router.use(rateLimiter);
+
+// Autogestión de cuenta y API Keys
+v2Router.get('/mi-cuenta', miCuentaController.obtenerMiCuenta);
+v2Router.get('/mi-cuenta/emisores', miCuentaController.obtenerMisEmisores);
+v2Router.get('/mi-cuenta/api-keys', miCuentaController.listarMisApiKeys);
+v2Router.post('/mi-cuenta/api-keys', miCuentaController.crearMiApiKey);
+v2Router.delete('/mi-cuenta/api-keys/:apiKeyId', miCuentaController.revocarMiApiKey);
 
 // Facturación con validación + límite de plan
 v2Router.post('/facturar',

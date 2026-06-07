@@ -249,22 +249,44 @@ const pendientesReintento = async (maxIntentos = 3) => {
 /**
  * Busca un DTE de forma pública por código de generación
  * (Para la representación gráfica session-less del receptor)
+ *
+ * SECURITY FIX (A2): Explicit select projection.
+ * EXCLUDES: errorLog, observaciones, jsonFirmado (internal diagnostics)
+ * EXCLUDES from emisor: correo, telefono, direccion (PII beyond fiscal requirement)
  */
 const buscarPorCodigoPublico = async (codigoGeneracion) => {
     return await prisma.dte.findFirst({
         where: {
             codigoGeneracion,
         },
-        include: {
+        select: {
+            id: true,
+            codigoGeneracion: true,
+            numeroControl: true,
+            tipoDte: true,
+            version: true,
+            ambiente: true,
+            fechaEmision: true,
+            horaEmision: true,
+            receptorTipoDoc: true,
+            receptorNumDoc: true,
+            receptorNombre: true,
+            // receptorCorreo: excluded — PII
+            totalGravada: true,
+            totalIva: true,
+            totalPagar: true,
+            status: true,
+            selloRecibido: true,
+            fechaProcesamiento: true,
+            jsonOriginal: true,
+            // EXCLUDED: errorLog, observaciones, jsonFirmado, intentos
+            createdAt: true,
             emisor: {
                 select: {
                     nit: true,
                     nombre: true,
                     nombreComercial: true,
-                    correo: true,
-                    telefono: true,
-                    direccion: true,
-                    ambiente: true,
+                    // EXCLUDED: correo, telefono, direccion (not required by MH for public view)
                 }
             }
         }

@@ -23,12 +23,9 @@ module.exports = {
         {
             name: 'dte-api',
             script: './src/app.js',
-            // SECURITY NOTE: El rate limiter actual usa un Map en memoria.
-            // Con instances > 1 (cluster), cada worker tiene su propio Map:
-            // el límite real sería rateLimit × núcleoCPU, no rateLimit total.
-            // TODO: Migrar a rate-limiter-flexible con ioredis antes de
-            // aumentar instancias en producción.
-            instances: 1,
+            // SECURITY NOTE: The rate limiter has been updated to use
+            // rate-limiter-flexible with a Redis backend. Safe for multi-instance cluster mode.
+            instances: 'max',
             exec_mode: 'cluster',
 
             // Reinicio automático
@@ -93,26 +90,4 @@ module.exports = {
             log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
         },
     ],
-
-    // ========================================
-    // CONFIGURACIÓN DE DEPLOY
-    // ========================================
-    deploy: {
-        production: {
-            user: 'deploy',
-            host: 'your-server.com',
-            ref: 'origin/main',
-            repo: 'git@github.com:your-repo/fac-electronica.git',
-            path: '/var/www/dte-api',
-            'post-deploy': 'npm ci && pm2 reload ecosystem.config.js --env production',
-        },
-        staging: {
-            user: 'deploy',
-            host: 'staging.your-server.com',
-            ref: 'origin/develop',
-            repo: 'git@github.com:your-repo/fac-electronica.git',
-            path: '/var/www/dte-api-staging',
-            'post-deploy': 'npm ci && pm2 reload ecosystem.config.js --env staging',
-        },
-    },
 };
