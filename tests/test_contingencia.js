@@ -19,11 +19,20 @@ async function testContingencia() {
     try {
         // 1. Obtener tenant y emisor de prueba
         const tenant = await prisma.tenant.findFirst();
-        const emisor = await prisma.emisor.findFirst({ where: { tenantId: tenant.id } });
+        let emisor = await prisma.emisor.findFirst({ where: { tenantId: tenant.id } });
 
         if (!tenant || !emisor) {
             throw new Error('No se encontró un Tenant o Emisor en la BD. Ejecute el setup o seed primero.');
         }
+
+        // Limpiar el emisor en la base de datos para que tenga valores correctos
+        emisor = await prisma.emisor.update({
+            where: { id: emisor.id },
+            data: {
+                contingenciaTipo: 1,
+                contingenciaMotivo: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
+            },
+        });
 
         printPass(`Tenant cargado: ${tenant.nombre} (ID: ${tenant.id})`);
         printPass(`Emisor cargado: ${emisor.nombre} (NIT: ${emisor.nit})`);

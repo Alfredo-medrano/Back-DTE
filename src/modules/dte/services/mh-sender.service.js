@@ -82,7 +82,10 @@ const autenticar = async (credenciales) => {
         params.append('user', nit);
         params.append('pwd', claveApi);
 
-        const response = await mhAuthClient.post('', params);
+        // Solicitud de autenticación protegida por el Circuit Breaker
+        const response = await ejecutarConCircuito('HACIENDA_MH', async () => {
+            return await mhAuthClient.post('', params);
+        });
 
         if (response.data?.status === 'OK' && response.data?.body?.token) {
             // Guardar en caché con clave única por NIT

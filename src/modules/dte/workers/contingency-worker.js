@@ -253,6 +253,13 @@ async function ejecutarCiclo() {
 
     for (const emisorId of Object.keys(grupos)) {
         try {
+            // Verificar si el emisor se encuentra en contingencia manual activa
+            const emisor = await prisma.emisor.findUnique({ where: { id: emisorId } });
+            if (emisor && emisor.contingenciaManual) {
+                log.info(`El emisor ${emisor.nit} está en Modo Contingencia Manual activa. Saltando regularización en este ciclo.`);
+                continue;
+            }
+
             log.info(`Regularizando contingencia para emisor ID: ${emisorId}...`);
             const resultado = await dteOrchestrator.regularizarContingencia({ emisorId });
             
