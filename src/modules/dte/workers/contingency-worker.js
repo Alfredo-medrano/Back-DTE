@@ -17,10 +17,9 @@
 
 require('dotenv').config();
 const { prisma } = require('../../../shared/db/prisma');
-const { emailDelivery, mhSender, signer: signerService } = require('../services');
+const { emailDelivery, mhSender } = require('../services');
 const { tenantService } = require('../../iam');
 const circuitBreaker = require('../../../shared/utils/circuit-breaker');
-const { sanitizarParaMH } = require('../builders/sanitize-for-mh');
 
 const CONFIG = {
     batchSize: parseInt(process.env.CONTINGENCY_BATCH_SIZE) || 10,
@@ -94,30 +93,9 @@ async function transmitirDTE(dte) {
         // Obtener credenciales desencriptadas
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
-        // Usar jsonOriginal (limpio) y limpiar cualquier marca de contingencia residual
-        let documentoLimpio = JSON.parse(JSON.stringify(dte.jsonOriginal));
-        documentoLimpio.identificacion.tipoModelo = 1;
-        documentoLimpio.identificacion.tipoOperacion = 1;
-        documentoLimpio.identificacion.tipoContingencia = null;
-        documentoLimpio.identificacion.motivoContin = null;
-        documentoLimpio = sanitizarParaMH(documentoLimpio);
-
-        // Re-firmar el documento limpio
-        log.info(`Re-firmando DTE limpio para transmisión: ${codigoGeneracion}`);
-        const resultadoFirma = await signerService.firmarDocumento({
-            documento: documentoLimpio,
-            nit: emisorConCredenciales.nit,
-            clavePrivada: emisorConCredenciales.mhClavePrivada,
-        });
-
-        if (!resultadoFirma.exito) {
-            log.error(`❌ Error al re-firmar DTE ${codigoGeneracion}: ${resultadoFirma.error}`);
-            return { success: false, error: 'Error de firma local' };
-        }
-
         log.info(`Transmitiendo DTE en contingencia: ${codigoGeneracion}`);
         const resultado = await mhSender.enviarDTE({
-            documentoFirmado: resultadoFirma.firma,
+            documentoFirmado: dte.jsonFirmado,
             ambiente: dte.ambiente,
             tipoDte: dte.tipoDte,
             version: dte.version,

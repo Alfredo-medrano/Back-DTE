@@ -82,12 +82,9 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
     const tipoContingencia = tipoContingenciaRaw ? parseInt(tipoContingenciaRaw, 10) : null;
     const motivoContin = emisor.contingencia?.motivo || null;
 
-    // NORMATIVA MH: El DTE individual SIEMPRE va con tipoModelo=1, tipoOperacion=1,
-    // tipoContingencia=null, motivoContin=null.
-    // La contingencia se notifica al MH por separado con un Evento de Contingencia (DTE tipo 15).
-    // Los campos de contingencia se guardan en nuestra BD (no en el JSON del DTE).
-    const tipoOperacion = 1;
-    const tipoModelo = 1;
+    // Si hay contingencia, se utiliza Modelo Diferido (2) y Transmisión Diferida (2)
+    const tipoModelo = tipoContingencia ? 2 : 1;
+    const tipoOperacion = tipoContingencia ? 2 : 1;
 
     return {
         version: configDte.version,
@@ -97,8 +94,8 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
         codigoGeneracion,
         tipoModelo,
         tipoOperacion,
-        tipoContingencia: null,
-        motivoContin: null,
+        tipoContingencia,
+        motivoContin,
         fecEmi: fecha,
         horEmi: hora,
         tipoMoneda: 'USD',
