@@ -172,6 +172,71 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
     }
 };
 
+/**
+ * Envía un Evento de Contingencia firmado a Hacienda
+ * @param {object} params
+ * @param {string} params.documentoFirmado - Evento JWS firmado
+ * @param {string} params.ambiente - Ambiente (00=pruebas, 01=producción)
+ * @param {number} params.version - Versión (3 por defecto)
+ * @param {string} params.codigoGeneracion - UUID del evento
+ * @param {object} params.credenciales - Credenciales del emisor
+ */
+const enviarEventoContingencia = async ({ documentoFirmado, ambiente, version, codigoGeneracion, credenciales }) => {
+    try {
+        const auth = await autenticar(credenciales);
+        if (!auth.exito) {
+            return { exito: false, error: auth.error, mensaje: 'No se pudo obtener token' };
+        }
+
+        logger.info('Enviando Evento de Contingencia a Hacienda', { nit: credenciales.nit, ambiente, version, codigoGeneracion });
+
+        const payload = {
+            ambiente,
+            idEnvio: Number(Date.now()),
+            version: parseInt(version || 3, 10),
+            codigoGeneracion,
+            documento: documentoFirmado,
+        };
+
+        // Envío con Circuit Breaker
+        const response = await ejecutarConCircuito('HACIENDA_MH', async () => {
+            return await mhClient.post('/fesv/contingencia', payload, {
+                headers: { 'Authorization': auth.token },
+                _credenciales: credenciales,
+            });
+        });
+
+        if (response.data?.estado === 'PROCESADO' || response.data?.estado === 'RECIBIDO') {
+            logger.info('Evento de contingencia procesado por Hacienda', { nit: credenciales.nit, estado: response.data.estado });
+            return {
+                exito: true,
+                estado: response.data.estado,
+                selloRecibido: response.data.selloRecibido,
+                codigoGeneracion: response.data.codigoGeneracion,
+                fechaProcesamiento: response.data.fhProcesamiento,
+                mensaje: 'Evento de contingencia procesado exitosamente',
+            };
+        }
+
+        return {
+            exito: false,
+            estado: response.data?.estado,
+            observaciones: response.data?.observaciones || response.data?.descripcionMsg,
+            error: response.data,
+            mensaje: 'Evento de contingencia rechazado por Hacienda',
+        };
+
+    } catch (error) {
+        logger.error('Error al enviar Evento de Contingencia', { 
+            nit: credenciales.nit, 
+            error: error.message,
+            mhResponse: error.response?.data
+        });
+        return { exito: false, error: error.response?.data || error.message, mensaje: 'Error de comunicación' };
+    }
+};
+
+
 const consultarEstado = async ({ codigoGeneracion, tdte, credenciales }) => {
     try {
         const auth = await autenticar(credenciales);
@@ -252,6 +317,7 @@ const estadisticasCache = async () => {
 module.exports = {
     autenticar,
     enviarDTE,
+    enviarEventoContingencia,
     consultarEstado,
     anularDTE,
     limpiarToken,

@@ -11,7 +11,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { dteController, statusController, miCuentaController } = require('./controllers');
+const { dteController, statusController, miCuentaController, contingenciaController } = require('./controllers');
 const {
     tenantContext,
     requierePermisos,
@@ -44,6 +44,12 @@ v2Router.get('/mi-cuenta/api-keys', miCuentaController.listarMisApiKeys);
 v2Router.post('/mi-cuenta/api-keys', miCuentaController.crearMiApiKey);
 v2Router.delete('/mi-cuenta/api-keys/:apiKeyId', miCuentaController.revocarMiApiKey);
 v2Router.get('/mi-cuenta/alertas-contingencia', miCuentaController.alertasContingencia);
+
+// Control de Contingencia
+v2Router.get('/mi-cuenta/contingencia', contingenciaController.obtenerEstado);
+v2Router.post('/mi-cuenta/contingencia/activar', requierePermisos('dte:create'), contingenciaController.activarContingencia);
+v2Router.post('/mi-cuenta/contingencia/desactivar', requierePermisos('dte:create'), contingenciaController.desactivarContingencia);
+v2Router.post('/mi-cuenta/contingencia/regularizar', requierePermisos('dte:create'), contingenciaController.regularizarManual);
 
 // Facturación con validación + límite de plan
 v2Router.post('/facturar',

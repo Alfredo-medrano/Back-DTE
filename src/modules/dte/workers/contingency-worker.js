@@ -17,7 +17,7 @@
 
 require('dotenv').config();
 const { prisma } = require('../../../shared/db/prisma');
-const { emailDelivery, mhSender, signer } = require('../services');
+const { emailDelivery, mhSender, signer, dteOrchestrator } = require('../services');
 const { tenantService } = require('../../iam');
 const circuitBreaker = require('../../../shared/utils/circuit-breaker');
 
@@ -237,20 +237,40 @@ async function ejecutarCiclo() {
         return { procesados: 0, exitosos: 0 };
     }
 
-    log.info(`Encontrados ${dtes.length} DTEs en contingencia para retransmitir.`);
-
-    let exitosos = 0;
+    // Agrupar DTEs por emisorId (multi-tenant)
+    const grupos = {};
     for (const dte of dtes) {
-        const res = await transmitirDTE(dte);
-        if (res && res.success) {
-            exitosos++;
+        if (!grupos[dte.emisorId]) {
+            grupos[dte.emisorId] = [];
         }
-        // Retraso para no sobrecargar el endpoint de Hacienda
-        await new Promise(resolve => setTimeout(resolve, 500));
+        grupos[dte.emisorId].push(dte);
     }
 
-    log.info(`Ciclo de contingencia completado: ${exitosos}/${dtes.length} procesados con éxito.`);
-    return { procesados: dtes.length, exitosos };
+    log.info(`Encontrados ${dtes.length} DTEs en contingencia para ${Object.keys(grupos).length} emisor(es).`);
+
+    let totalProcesados = 0;
+    let totalExitosos = 0;
+
+    for (const emisorId of Object.keys(grupos)) {
+        try {
+            log.info(`Regularizando contingencia para emisor ID: ${emisorId}...`);
+            const resultado = await dteOrchestrator.regularizarContingencia({ emisorId });
+            
+            totalProcesados += resultado.procesados;
+            totalExitosos += resultado.exitosos;
+
+            if (resultado.exito) {
+                log.success(`✅ Regularización completada con éxito para emisor ID ${emisorId}.`);
+            } else {
+                log.warn(`⚠️ Regularización parcial para emisor ID ${emisorId}: ${resultado.exitosos}/${resultado.procesados} exitosos.`);
+            }
+        } catch (err) {
+            log.error(`❌ Error al regularizar emisor ID ${emisorId}: ${err.message}`);
+        }
+    }
+
+    log.info(`Ciclo de contingencia completado: ${totalExitosos}/${totalProcesados} procesados con éxito.`);
+    return { procesados: totalProcesados, exitosos: totalExitosos };
 }
 
 /**

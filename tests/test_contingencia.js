@@ -202,6 +202,19 @@ async function testContingencia() {
             };
         };
 
+        // Mockear enviarEventoContingencia para el worker
+        const originalEnviarEventoContingencia = mhSender.enviarEventoContingencia;
+        mhSender.enviarEventoContingencia = async ({ codigoGeneracion }) => {
+            printInfo('MOCK-MH', `Recibiendo registro de Evento de Contingencia: ${codigoGeneracion}`);
+            return {
+                exito: true,
+                estado: 'RECIBIDO',
+                selloRecibido: 'SELLO-MOCK-EVENTO-789012',
+                codigoGeneracion,
+                fechaProcesamiento: '07/06/2026 01:19:00',
+            };
+        };
+
         // =========================================================================
         // ESCENARIO C: Recuperación y Transmisión por el Contingency Worker
         // =========================================================================
@@ -236,6 +249,7 @@ async function testContingencia() {
 
         // Restaurar enviarDTE original por seguridad
         mhSender.enviarDTE = originalEnviarDTE;
+        mhSender.enviarEventoContingencia = originalEnviarEventoContingencia;
 
         printHeader('PRUEBAS COMPLETADAS CON ÉXITO');
         await prisma.$disconnect();

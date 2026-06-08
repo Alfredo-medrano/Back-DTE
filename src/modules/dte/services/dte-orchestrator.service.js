@@ -14,9 +14,12 @@
 
 const signerService = require('./signer.service');
 const mhService = require('./mh-sender.service');
-const { construirDocumento: buildDTE } = require('../builders');
+const { construirDocumento: buildDTE, eventContingencyBuilder } = require('../builders');
 const { sanitizarParaMH } = require('../builders/sanitize-for-mh');
 const logger = require('../../../shared/logger');
+const { prisma } = require('../../../shared/db');
+const emailDelivery = require('./email-delivery.service');
+const { tenantService } = require('../../iam');
 
 /**
  * Construye el documento DTE sin firmar ni enviar.
@@ -210,8 +213,8 @@ const procesarContingencia = async ({
     const emisorConContingencia = {
         ...emisor,
         contingencia: {
-            tipo: 1,
-            motivo: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
+            tipo: emisor.contingenciaTipo || 1,
+            motivo: emisor.contingenciaMotivo || 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
             codigoGeneracion,
             numeroControl,
             fecEmi,
@@ -245,6 +248,266 @@ const procesarContingencia = async ({
     };
 };
 
+/**
+ * Crea, firma y envía un Evento de Contingencia a Hacienda
+ */
+const procesarEventoContingencia = async ({
+    emisor,
+    fInicio,
+    hInicio,
+    fFin,
+    hFin,
+    tipoContingencia,
+    motivoContingencia,
+    dtes
+}) => {
+    // 1. Construir el JSON de contingencia
+    const eventJson = eventContingencyBuilder.construir({
+        emisor,
+        fInicio,
+        hInicio,
+        fFin,
+        hFin,
+        tipoContingencia,
+        motivoContingencia,
+        dtes
+    });
+
+    // 2. Firmar con Docker firmador
+    logger.info('Firmando Evento de Contingencia', { codigoGeneracion: eventJson.identificacion.codigoGeneracion });
+    const resultadoFirma = await signerService.firmarDocumento({
+        documento: eventJson,
+        nit: emisor.nit,
+        clavePrivada: emisor.mhClavePrivada,
+    });
+
+    if (!resultadoFirma.exito) {
+        return {
+            exito: false,
+            error: 'Error al firmar evento de contingencia',
+            detalle: resultadoFirma.error,
+        };
+    }
+
+    // 3. Enviar al MH
+    logger.info('Transmitiendo Evento de Contingencia a Hacienda');
+    const resultadoMH = await mhService.enviarEventoContingencia({
+        documentoFirmado: resultadoFirma.firma,
+        ambiente: emisor.ambiente,
+        version: eventJson.identificacion.version,
+        codigoGeneracion: eventJson.identificacion.codigoGeneracion,
+        credenciales: {
+            nit: emisor.nit,
+            claveApi: emisor.mhClaveApi,
+        }
+    });
+
+    return {
+        exito: resultadoMH.exito,
+        selloRecibido: resultadoMH.selloRecibido,
+        codigoGeneracion: eventJson.identificacion.codigoGeneracion,
+        fechaProcesamiento: resultadoMH.fechaProcesamiento,
+        estado: resultadoMH.estado,
+        error: resultadoMH.error,
+        observaciones: resultadoMH.observaciones || resultadoMH.mensaje,
+        documentoFirmado: resultadoFirma.firma,
+    };
+};
+
+/**
+ * Realiza la regularización completa de contingencia para un emisor
+ */
+const regularizarContingencia = async ({
+    emisorId,
+    fInicio = null,
+    hInicio = null,
+    fFin = null,
+    hFin = null,
+    tipoContingencia = null,
+    motivoContingencia = null
+}) => {
+    // 1. Obtener DTEs en estado CONTINGENCIA para este emisor
+    const dtes = await prisma.dte.findMany({
+        where: {
+            emisorId,
+            status: 'CONTINGENCIA',
+        },
+        orderBy: {
+            createdAt: 'asc', // FIFO
+        },
+    });
+
+    if (dtes.length === 0) {
+        return {
+            exito: true,
+            mensaje: 'No hay documentos en contingencia pendientes de regularización.',
+            procesados: 0,
+            exitosos: 0,
+            fallidos: 0,
+        };
+    }
+
+    // 2. Obtener emisor con credenciales
+    const emisor = await prisma.emisor.findUnique({
+        where: { id: emisorId },
+    });
+
+    if (!emisor) {
+        throw new Error(`Emisor con ID ${emisorId} no encontrado`);
+    }
+
+    const emisorConCredenciales = {
+        ...emisor,
+        mhClaveApi: tenantService.desencriptar(emisor.mhClaveApi),
+        mhClavePrivada: tenantService.desencriptar(emisor.mhClavePrivada),
+    };
+
+    // 3. Determinar fechas e información del motivo de la contingencia
+    const primerDte = dtes[0];
+    const ultimoDte = dtes[dtes.length - 1];
+
+    const fInicioFinal = fInicio || primerDte.fechaEmision.toISOString().split('T')[0];
+    const hInicioFinal = hInicio || primerDte.horaEmision;
+    const fFinFinal = fFin || ultimoDte.fechaEmision.toISOString().split('T')[0];
+    const hFinFinal = hFin || ultimoDte.horaEmision;
+    const tipoContFinal = tipoContingencia || parseInt(primerDte.tipoContingencia || '1', 10);
+    const motivoContFinal = motivoContingencia || primerDte.motivoContin || 'NO DISPONIBILIDAD DE SISTEMA DEL MH';
+
+    logger.info(`Iniciando regularización de contingencia para emisor ${emisor.nit}`, {
+        cantidadDTEs: dtes.length,
+        periodo: `${fInicioFinal} ${hInicioFinal} -> ${fFinFinal} ${hFinFinal}`,
+        tipo: tipoContFinal
+    });
+
+    // 4. Crear, firmar y transmitir el Evento de Contingencia
+    const eventRes = await procesarEventoContingencia({
+        emisor: emisorConCredenciales,
+        fInicio: fInicioFinal,
+        hInicio: hInicioFinal,
+        fFin: fFinFinal,
+        hFin: hFinFinal,
+        tipoContingencia: tipoContFinal,
+        motivoContingencia: motivoContFinal,
+        dtes: dtes.map(d => ({ codigoGeneracion: d.codigoGeneracion, tipoDte: d.tipoDte }))
+    });
+
+    if (!eventRes.exito) {
+        logger.error('Error al registrar el Evento de Contingencia en Hacienda', {
+            error: eventRes.error,
+            observaciones: eventRes.observaciones
+        });
+        return {
+            exito: false,
+            mensaje: 'No se pudo registrar el Evento de Contingencia en Hacienda.',
+            detalle: eventRes.observaciones || eventRes.error,
+            procesados: dtes.length,
+            exitosos: 0,
+            fallidos: dtes.length,
+        };
+    }
+
+    logger.info('Evento de Contingencia aprobado exitosamente por Hacienda. Sello:', {
+        sello: eventRes.selloRecibido,
+        codigoGeneracion: eventRes.codigoGeneracion
+    });
+
+    // 5. Transmitir los DTEs individuales uno por uno (FIFO)
+    let exitosos = 0;
+    let fallidos = 0;
+    const fallas = [];
+
+    for (const dte of dtes) {
+        try {
+            logger.info(`Transmitiendo DTE en contingencia: ${dte.codigoGeneracion}`);
+            const resultado = await mhService.enviarDTE({
+                documentoFirmado: dte.jsonFirmado,
+                ambiente: dte.ambiente,
+                tipoDte: dte.tipoDte,
+                version: dte.version,
+                codigoGeneracion: dte.codigoGeneracion,
+                credenciales: {
+                    nit: emisorConCredenciales.nit,
+                    claveApi: emisorConCredenciales.mhClaveApi,
+                },
+            });
+
+            if (resultado.exito) {
+                // Parsear fecha de procesamiento de Hacienda
+                let fechaProc = new Date();
+                if (resultado.fechaProcesamiento) {
+                    const match = resultado.fechaProcesamiento.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})$/);
+                    if (match) {
+                        fechaProc = new Date(`${match[3]}-${match[2]}-${match[1]}T${match[4]}`);
+                    } else {
+                        fechaProc = new Date(resultado.fechaProcesamiento);
+                    }
+                }
+
+                // Actualizar estado a PROCESADO
+                const dteActualizado = await prisma.dte.update({
+                    where: { id: dte.id },
+                    data: {
+                        status: 'PROCESADO',
+                        selloRecibido: resultado.selloRecibido,
+                        fechaProcesamiento: fechaProc,
+                        errorLog: null,
+                        observaciones: `Transmitido y sellado tras contingencia (Evento: ${eventRes.codigoGeneracion}).`,
+                    },
+                });
+
+                exitosos++;
+                logger.info(`DTE ${dte.codigoGeneracion} regularizado exitosamente.`);
+
+                // Enviar correo de notificación
+                try {
+                    await emailDelivery.enviarCorreoFactura({ dte: dteActualizado, emisor: emisorConCredenciales });
+                } catch (mailError) {
+                    logger.warn(`Error al enviar correo para DTE ${dte.codigoGeneracion}: ${mailError.message}`);
+                }
+            } else {
+                fallidos++;
+                logger.error(`Rechazo en DTE ${dte.codigoGeneracion} al regularizar`, { error: resultado.error });
+                
+                await prisma.dte.update({
+                    where: { id: dte.id },
+                    data: {
+                        intentos: { increment: 1 },
+                        errorLog: JSON.stringify(resultado.error || resultado.mensaje),
+                    },
+                });
+
+                fallas.push({ codigoGeneracion: dte.codigoGeneracion, error: resultado.error || resultado.mensaje });
+            }
+        } catch (dteError) {
+            fallidos++;
+            logger.error(`Error crítico procesando DTE ${dte.codigoGeneracion} en regularización`, { error: dteError.message });
+            
+            await prisma.dte.update({
+                where: { id: dte.id },
+                data: {
+                    intentos: { increment: 1 },
+                    errorLog: dteError.message,
+                },
+            });
+
+            fallas.push({ codigoGeneracion: dte.codigoGeneracion, error: dteError.message });
+        }
+    }
+
+    logger.info(`Sincronización de contingencia completada: ${exitosos} exitosos, ${fallidos} fallidos.`);
+
+    return {
+        exito: fallidos === 0,
+        mensaje: `Regularización completada. Exitosos: ${exitosos}, Fallidos: ${fallidos}`,
+        selloEvento: eventRes.selloRecibido,
+        codigoGeneracionEvento: eventRes.codigoGeneracion,
+        procesados: dtes.length,
+        exitosos,
+        fallidos,
+        fallas
+    };
+};
+
 module.exports = {
     construirDocumento,
     firmarYEnviar,
@@ -252,4 +515,6 @@ module.exports = {
     transmitirDirecto,
     reintentarEnvio,
     procesarContingencia,
+    procesarEventoContingencia,
+    regularizarContingencia,
 };

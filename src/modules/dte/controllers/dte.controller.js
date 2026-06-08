@@ -58,8 +58,8 @@ const crearFactura = async (req, res, next) => {
         // ═══════════════════════════════════════
         // CONTROL DE CONTINGENCIA ACTIVA (Circuit Breaker Abierto)
         // ═══════════════════════════════════════
-        if (!circuitBreaker.puedeEjecutar('HACIENDA_MH')) {
-            logger.warn('Circuit Breaker ABIERTO para HACIENDA_MH. Entrando en contingencia directa.');
+        if (!circuitBreaker.puedeEjecutar('HACIENDA_MH') || emisorConCredenciales.contingenciaManual) {
+            logger.warn('Modo contingencia activado para HACIENDA_MH (Circuit Breaker o Toggle Manual). Entrando en contingencia directa.');
             
             const contRes = await dteOrchestrator.procesarContingencia({
                 datos: {
@@ -105,10 +105,12 @@ const crearFactura = async (req, res, next) => {
             const dteFinal = await dteRepository.actualizarEstado(dteCreado.id, {
                 status: 'CONTINGENCIA',
                 jsonFirmado: contRes.documentoFirmado,
-                tipoContingencia: '1',
-                motivoContin: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
+                tipoContingencia: String(emisorConCredenciales.contingenciaTipo || '1'),
+                motivoContin: emisorConCredenciales.contingenciaMotivo || 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
                 fechaLimiteTransmision: contRes.fechaLimiteTransmision,
-                observaciones: 'Modo de Contingencia directo activado por Circuit Breaker abierto.',
+                observaciones: emisorConCredenciales.contingenciaManual
+                    ? 'Modo de Contingencia directo activado de forma manual.'
+                    : 'Modo de Contingencia directo activado por Circuit Breaker abierto.',
             });
 
             return res.status(201).json({

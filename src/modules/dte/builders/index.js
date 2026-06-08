@@ -15,6 +15,7 @@ const fseBuilder = require('./fse.builder');
 const nrBuilder = require('./nr.builder');
 const fexBuilder = require('./fex.builder');
 const cdBuilder = require('./cd.builder');
+const eventContingencyBuilder = require('./event-contingency.builder');
 
 /**
  * Mapa de builders por tipo DTE
@@ -75,6 +76,7 @@ module.exports = {
     fexBuilder,
     fseBuilder,
     cdBuilder,
+    eventContingencyBuilder,
 
     // Helpers
     obtenerBuilder,

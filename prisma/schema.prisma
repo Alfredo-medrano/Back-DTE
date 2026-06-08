@@ -73,6 +73,13 @@ model Emisor {
   ambiente String  @default("00") // 00=Pruebas, 01=Producción
   activo   Boolean @default(true)
 
+  // Configuración de Contingencia Manual
+  contingenciaManual  Boolean @default(false)
+  contingenciaTipo    Int     @default(1)
+  contingenciaMotivo  String  @default("NO DISPONIBILIDAD DE SISTEMA DEL MH")
+  contingenciaFInicio String?
+  contingenciaHInicio String?
+
   // Correlativos por tipo DTE
   correlativoFE  Int @default(1)
   correlativoCCF Int @default(1)
