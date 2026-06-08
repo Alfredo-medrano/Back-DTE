@@ -114,7 +114,7 @@ async function testContingencia() {
 
         if (dteA_db && dteA_db.status === 'CONTINGENCIA') {
             printPass('DTE registrado correctamente en la Base de Datos con estado CONTINGENCIA.');
-            if (dteA_db.tipoContingencia === '4' && dteA_db.motivoContin.includes('NO DISPONIBLES')) {
+            if (dteA_db.tipoContingencia === '1' && dteA_db.motivoContin.includes('NO DISPONIBILIDAD')) {
                 printPass('Valores tipoContingencia y motivoContin inyectados correctamente.');
             } else {
                 printFail('Campos de contingencia incorrectos en BD.');

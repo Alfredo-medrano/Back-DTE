@@ -210,8 +210,8 @@ const procesarContingencia = async ({
     const emisorConContingencia = {
         ...emisor,
         contingencia: {
-            tipo: '4',
-            motivo: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+            tipo: 1,
+            motivo: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
             codigoGeneracion,
             numeroControl,
             fecEmi,

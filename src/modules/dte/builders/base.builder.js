@@ -78,9 +78,11 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
     const fecha = emisor.contingencia?.fecEmi || currentFecha;
     const hora = emisor.contingencia?.horEmi || currentHora;
 
-    const tipoContingencia = emisor.contingencia?.tipo || null;
+    const tipoContingenciaRaw = emisor.contingencia?.tipo;
+    const tipoContingencia = tipoContingenciaRaw ? parseInt(tipoContingenciaRaw, 10) : null;
     const motivoContin = emisor.contingencia?.motivo || null;
     const tipoOperacion = tipoContingencia ? 2 : 1;
+    const tipoModelo = tipoContingencia ? 2 : 1;
 
     return {
         version: configDte.version,
@@ -88,7 +90,7 @@ const construirIdentificacion = (tipoDte, emisor, correlativo) => {
         tipoDte,
         numeroControl,
         codigoGeneracion,
-        tipoModelo: 1,
+        tipoModelo,
         tipoOperacion,
         tipoContingencia,
         motivoContin,

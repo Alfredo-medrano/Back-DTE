@@ -105,8 +105,8 @@ const crearFactura = async (req, res, next) => {
             const dteFinal = await dteRepository.actualizarEstado(dteCreado.id, {
                 status: 'CONTINGENCIA',
                 jsonFirmado: contRes.documentoFirmado,
-                tipoContingencia: '4',
-                motivoContin: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+                tipoContingencia: '1',
+                motivoContin: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
                 fechaLimiteTransmision: contRes.fechaLimiteTransmision,
                 observaciones: 'Modo de Contingencia directo activado por Circuit Breaker abierto.',
             });
@@ -222,8 +222,8 @@ const crearFactura = async (req, res, next) => {
                 status: 'CONTINGENCIA',
                 jsonOriginal: contRes.documentoDTE,
                 jsonFirmado: contRes.documentoFirmado,
-                tipoContingencia: '4',
-                motivoContin: 'SERVICIOS DE RECEPCION DEL MINISTERIO DE HACIENDA NO DISPONIBLES',
+                tipoContingencia: '1',
+                motivoContin: 'NO DISPONIBILIDAD DE SISTEMA DEL MH',
                 fechaLimiteTransmision: contRes.fechaLimiteTransmision,
                 observaciones: 'Modo de Contingencia activado por fallo en la comunicación con Hacienda.',
             });
