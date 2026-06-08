@@ -17,7 +17,7 @@
 
 require('dotenv').config();
 const { prisma } = require('../../../shared/db/prisma');
-const { emailDelivery, mhSender } = require('../services');
+const { emailDelivery, mhSender, signer } = require('../services');
 const { tenantService } = require('../../iam');
 const circuitBreaker = require('../../../shared/utils/circuit-breaker');
 
@@ -93,9 +93,33 @@ async function transmitirDTE(dte) {
         // Obtener credenciales desencriptadas
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
+        if (!dte.jsonOriginal) {
+            throw new Error(`DTE ${codigoGeneracion} no tiene jsonOriginal guardado`);
+        }
+
+        // Limpiar el jsonOriginal para la transmisión (Normativa MH: no marcas de contingencia)
+        const documentoDTE = JSON.parse(JSON.stringify(dte.jsonOriginal));
+        if (documentoDTE.identificacion) {
+            documentoDTE.identificacion.tipoOperacion = 1;
+            documentoDTE.identificacion.tipoModelo = 1;
+            documentoDTE.identificacion.tipoContingencia = null;
+            documentoDTE.identificacion.motivoContin = null;
+        }
+
+        log.info(`Firmando DTE limpio para transmisión: ${codigoGeneracion}`);
+        const resultadoFirma = await signer.firmarDocumento({
+            documento: documentoDTE,
+            nit: emisorConCredenciales.nit,
+            clavePrivada: emisorConCredenciales.mhClavePrivada,
+        });
+
+        if (!resultadoFirma.exito) {
+            throw new Error(`Error al re-firmar documento en contingencia: ${resultadoFirma.error}`);
+        }
+
         log.info(`Transmitiendo DTE en contingencia: ${codigoGeneracion}`);
         const resultado = await mhSender.enviarDTE({
-            documentoFirmado: dte.jsonFirmado,
+            documentoFirmado: resultadoFirma.firma,
             ambiente: dte.ambiente,
             tipoDte: dte.tipoDte,
             version: dte.version,
@@ -125,6 +149,7 @@ async function transmitirDTE(dte) {
                     status: 'PROCESADO',
                     selloRecibido: resultado.selloRecibido,
                     fechaProcesamiento: fechaProc,
+                    jsonFirmado: resultadoFirma.firma,
                     errorLog: null,
                     observaciones: 'Transmitido y sellado exitosamente tras periodo de contingencia.',
                 },
