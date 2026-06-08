@@ -17,14 +17,18 @@
 
 require('dotenv').config();
 const { prisma } = require('../../../shared/db/prisma');
-const { emailDelivery, mhSender } = require('../services');
+const { emailDelivery, mhSender, signer: signerService } = require('../services');
 const { tenantService } = require('../../iam');
 const circuitBreaker = require('../../../shared/utils/circuit-breaker');
+const { sanitizarParaMH } = require('../builders/sanitize-for-mh');
 
 const CONFIG = {
     batchSize: parseInt(process.env.CONTINGENCY_BATCH_SIZE) || 10,
     intervaloMs: parseInt(process.env.CONTINGENCY_INTERVAL_MS) || 120000, // 2 minutos por defecto
     modoUnico: process.env.CONTINGENCY_RUN_ONCE === 'true',
+    // FIX: Límite máximo de reintentos para errores de comunicación.
+    // Sin este límite, un MH permanentemente caído causaba reintentos infinitos.
+    maxReintentos: parseInt(process.env.CONTINGENCY_MAX_RETRIES) || 20,
 };
 
 const C = {
@@ -68,7 +72,11 @@ async function obtenerDTEsContingencia() {
 }
 
 /**
- * Procesa y transmite un DTE en contingencia individual
+ * Procesa y transmite un DTE en contingencia individual.
+ *
+ * NORMATIVA MH: El DTE individual NO lleva marcas de contingencia en su JSON.
+ * Por eso se usa jsonOriginal (limpio, sin tipoContingencia/motivoContin)
+ * y se RE-FIRMA antes de transmitir, en vez de reusar el jsonFirmado anterior.
  */
 async function transmitirDTE(dte) {
     const { codigoGeneracion, emisor, fechaLimiteTransmision } = dte;
@@ -86,9 +94,30 @@ async function transmitirDTE(dte) {
         // Obtener credenciales desencriptadas
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
+        // Usar jsonOriginal (limpio) y limpiar cualquier marca de contingencia residual
+        let documentoLimpio = JSON.parse(JSON.stringify(dte.jsonOriginal));
+        documentoLimpio.identificacion.tipoModelo = 1;
+        documentoLimpio.identificacion.tipoOperacion = 1;
+        documentoLimpio.identificacion.tipoContingencia = null;
+        documentoLimpio.identificacion.motivoContin = null;
+        documentoLimpio = sanitizarParaMH(documentoLimpio);
+
+        // Re-firmar el documento limpio
+        log.info(`Re-firmando DTE limpio para transmisión: ${codigoGeneracion}`);
+        const resultadoFirma = await signerService.firmarDocumento({
+            documento: documentoLimpio,
+            nit: emisorConCredenciales.nit,
+            clavePrivada: emisorConCredenciales.mhClavePrivada,
+        });
+
+        if (!resultadoFirma.exito) {
+            log.error(`❌ Error al re-firmar DTE ${codigoGeneracion}: ${resultadoFirma.error}`);
+            return { success: false, error: 'Error de firma local' };
+        }
+
         log.info(`Transmitiendo DTE en contingencia: ${codigoGeneracion}`);
         const resultado = await mhSender.enviarDTE({
-            documentoFirmado: dte.jsonFirmado,
+            documentoFirmado: resultadoFirma.firma,
             ambiente: dte.ambiente,
             tipoDte: dte.tipoDte,
             version: dte.version,
@@ -151,14 +180,31 @@ async function transmitirDTE(dte) {
                 });
                 log.error(`❌ DTE ${codigoGeneracion} rechazado permanentemente por Hacienda.`);
             } else {
-                // Si es un error de comunicación, incrementamos los intentos de reenvío
-                await prisma.dte.update({
-                    where: { id: dte.id },
-                    data: {
-                        intentos: { increment: 1 },
-                        errorLog: resultado.mensaje || 'Error temporal de comunicación',
-                    },
-                });
+                // Si es un error de comunicación, verificar límite de reintentos
+                // FIX: Sin este límite, un MH permanentemente caído causaba reintentos infinitos.
+                const intentosActuales = (dte.intentos || 0) + 1;
+
+                if (intentosActuales >= CONFIG.maxReintentos) {
+                    await prisma.dte.update({
+                        where: { id: dte.id },
+                        data: {
+                            status: 'RECHAZADO',
+                            intentos: intentosActuales,
+                            observaciones: `Abandonado tras ${intentosActuales} intentos fallidos de comunicación. Requiere intervención manual.`,
+                            errorLog: resultado.mensaje || 'Máximo de reintentos alcanzado',
+                        },
+                    });
+                    log.error(`❌ DTE ${codigoGeneracion} abandonado tras ${intentosActuales} intentos. Requiere intervención manual.`);
+                } else {
+                    await prisma.dte.update({
+                        where: { id: dte.id },
+                        data: {
+                            intentos: { increment: 1 },
+                            errorLog: resultado.mensaje || 'Error temporal de comunicación',
+                        },
+                    });
+                    log.warn(`⚠️ DTE ${codigoGeneracion}: intento ${intentosActuales}/${CONFIG.maxReintentos} fallido por error de comunicación.`);
+                }
             }
 
             return { success: false };

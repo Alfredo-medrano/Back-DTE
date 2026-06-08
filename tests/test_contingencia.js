@@ -119,10 +119,10 @@ async function testContingencia() {
             } else {
                 printFail('Campos de contingencia incorrectos en BD.');
             }
-            if (dteA_db.jsonOriginal && dteA_db.jsonOriginal.identificacion.tipoOperacion === 2) {
-                printPass('JSON original tiene tipoOperacion = 2.');
+            if (dteA_db.jsonOriginal && dteA_db.jsonOriginal.identificacion.tipoOperacion === 1) {
+                printPass('JSON original tiene tipoOperacion = 1 (Normativa MH).');
             } else {
-                printFail('JSON original tipoOperacion es incorrecto.');
+                printFail('JSON original tipoOperacion es incorrecto (esperado 1).');
             }
             if (dteA_db.jsonFirmado) {
                 printPass('El DTE fue firmado localmente con éxito.');
