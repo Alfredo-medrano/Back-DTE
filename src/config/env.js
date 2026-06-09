@@ -36,6 +36,9 @@ const config = {
 
     // Emisor
     emisor: {
+        nit: process.env.NIT_EMISOR,
+        nrc: process.env.NRC_EMISOR,
+        nombre: process.env.NOMBRE_EMISOR,
         // SECURITY FIX (C5): No fallback to '00' in production
         ambiente: process.env.AMBIENTE || (process.env.NODE_ENV === 'production' ? undefined : '00'),
     },

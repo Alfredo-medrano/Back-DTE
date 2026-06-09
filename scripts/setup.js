@@ -84,6 +84,8 @@ async function setup() {
             nombre: process.env.SETUP_EMISOR_NOMBRE,
             codActividad: process.env.SETUP_EMISOR_COD_ACTIVIDAD,
             descActividad: process.env.SETUP_EMISOR_DESC_ACTIVIDAD,
+            departamento: process.env.SETUP_EMISOR_DEPARTAMENTO,
+            municipio: process.env.SETUP_EMISOR_MUNICIPIO,
             complemento: process.env.SETUP_EMISOR_COMPLEMENTO,
             telefono: process.env.SETUP_EMISOR_TELEFONO,
             correo: process.env.SETUP_EMISOR_CORREO,
