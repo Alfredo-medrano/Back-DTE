@@ -14,6 +14,61 @@ const logger = require('../../../shared/logger');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
 
 /**
+ * Extrae y normaliza el objeto DTE desde diferentes formatos posibles (JWS string, DB record, etc.)
+ */
+const extraerDteObj = (dte) => {
+    if (!dte) return null;
+    
+    // Si ya es un objeto con identificacion (estructura DTE directa)
+    if (typeof dte === 'object' && dte.identificacion) {
+        return dte;
+    }
+    
+    // Si es un registro de base de datos
+    if (typeof dte === 'object') {
+        if (dte.jsonOriginal) {
+            const parsed = typeof dte.jsonOriginal === 'string' 
+                ? JSON.parse(dte.jsonOriginal) 
+                : dte.jsonOriginal;
+            if (parsed && parsed.identificacion) return parsed;
+        }
+        if (dte.jsonFirmado) {
+            return extraerDteObj(dte.jsonFirmado);
+        }
+        if (dte.documento && typeof dte.documento === 'object') {
+            return dte.documento;
+        }
+    }
+    
+    // Si es un JWS string (3 partes separadas por puntos)
+    if (typeof dte === 'string' && dte.includes('.')) {
+        const parts = dte.split('.');
+        if (parts.length === 3) {
+            try {
+                const payloadBase64 = parts[1];
+                const payloadJson = Buffer.from(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+                const parsed = JSON.parse(payloadJson);
+                if (parsed && parsed.identificacion) return parsed;
+            } catch (e) {
+                logger.error('Error decodificando payload JWS en extraerDteObj', { error: e.message });
+            }
+        }
+    }
+    
+    // Si es un JSON string
+    if (typeof dte === 'string') {
+        try {
+            const parsed = JSON.parse(dte);
+            if (parsed && parsed.identificacion) return parsed;
+        } catch (e) {
+            // No es JSON válido
+        }
+    }
+    
+    return null;
+};
+
+/**
  * Genera un código QR en base64 para la URL de consulta pública.
  */
 const generarCodigoQR = async (ambiente, codigoGeneracion, fechaEmision) => {
@@ -47,9 +102,9 @@ const generarCodigoQR = async (ambiente, codigoGeneracion, fechaEmision) => {
  */
 const generarHTMLFactura = (dte, qrDataUrl) => {
     // Normalización de datos
-    const identificacion = dte.identificacion;
-    const emisor = dte.emisor;
-    const receptor = dte.receptor;
+    const identificacion = dte.identificacion || {};
+    const emisor = dte.emisor || {};
+    const receptor = dte.receptor || {};
     const cuerpo = dte.cuerpoDocumento || [];
     const resumen = dte.resumen || dte.totales || {};
     
@@ -289,7 +344,12 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
  */
 const generarPDF = async (dte) => {
     try {
-        const identificacion = dte.identificacion || {};
+        const dteObj = extraerDteObj(dte);
+        if (!dteObj) {
+            throw new Error('No se pudo extraer una estructura DTE válida para la generación de PDF');
+        }
+        
+        const identificacion = dteObj.identificacion || {};
         const fechaEmision = identificacion.fecEmi || new Date().toISOString().split('T')[0];
         
         // 1. Generar el código QR de consulta MH
@@ -300,7 +360,7 @@ const generarPDF = async (dte) => {
         );
 
         // 2. Armar el HTML final
-        const html = generarHTMLFactura(dte, qrDataUrl);
+        const html = generarHTMLFactura(dteObj, qrDataUrl);
 
         // 3. Lanzar Puppeteer y renderizar PDF
         const browser = await puppeteer.launch({

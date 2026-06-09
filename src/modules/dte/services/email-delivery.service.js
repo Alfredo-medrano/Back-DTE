@@ -353,7 +353,7 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
         } catch (mailError) {
             logger.error('SMTP ERROR: Fallo al enviar correo de DTE', {
                 codigoGeneracion,
-                destinatario: receptor.correo,
+                destinatario: receptorCorreo,
                 error: mailError.message,
                 stack: mailError.stack
             });

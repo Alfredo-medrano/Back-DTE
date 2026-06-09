@@ -26,6 +26,7 @@ const { checkPlanLimits } = require('../../modules/billing');
 router.get('/status', statusController.obtenerEstado);
 router.get('/ejemplo', dteController.generarEjemplo);
 router.get('/public/factura/:codigoGeneracion', rateLimiter, dteController.consultarFacturaPublica);
+router.get('/public/factura/:codigoGeneracion/pdf', rateLimiter, dteController.descargarFacturaPDF);
 
 // ========================================
 // RUTAS PROTEGIDAS v2 (requieren API Key)
@@ -68,6 +69,7 @@ v2Router.post('/factura/:codigoGeneracion/anular',
 // Consultas y Conciliación
 v2Router.get('/facturas', requierePermisos('dte:read'), dteController.listarFacturas);
 v2Router.get('/factura/:codigoGeneracion', requierePermisos('dte:read'), dteController.consultarFactura);
+v2Router.get('/factura/:codigoGeneracion/pdf', requierePermisos('dte:read'), dteController.descargarFacturaPDF);
 v2Router.post('/factura/:codigoGeneracion/conciliar', requierePermisos('dte:create'), dteController.conciliarFactura);
 v2Router.get('/estadisticas', requierePermisos('dte:read'), dteController.estadisticas);
 

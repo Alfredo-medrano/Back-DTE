@@ -64,7 +64,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
         // Formatear NIT para Docker (14 dígitos)
         const nitDocker = nit.padStart(14, '0');
 
-        logger.info('Enviando documento a firmar', { nit });
+        logger.info('Enviando documento a firmar', { nit: nitDocker });
 
         const payload = {
             nit: nitDocker,
@@ -77,7 +77,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
             dockerClient.post('/firmardocumento/', payload)
         );
 
-        if (response.data && response.data.body) {
+        if (response.data && response.data.status === 'OK' && typeof response.data.body === 'string') {
             logger.info('Documento firmado exitosamente', { nit });
             return {
                 exito: true,
@@ -86,9 +86,12 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
             };
         }
 
+        const errorMsg = response.data?.body?.mensaje || response.data?.descripcion || response.data?.mensaje || 'Respuesta de firma inválida o con error';
+        logger.error('Fallo en microservicio de firma Docker', { nit, error: errorMsg });
+
         return {
             exito: false,
-            error: 'Respuesta del firmador sin body',
+            error: errorMsg,
             data: response.data,
         };
 
@@ -96,7 +99,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
         logger.error('Error al firmar', { nit, error: error.message });
         return {
             exito: false,
-            error: error.response?.data || error.message,
+            error: error.response?.data?.body?.mensaje || error.response?.data?.descripcion || error.message,
             mensaje: 'Error al firmar documento',
         };
     }

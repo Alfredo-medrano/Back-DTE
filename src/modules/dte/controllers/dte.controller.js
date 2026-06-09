@@ -777,12 +777,54 @@ const consultarFacturaPublica = async (req, res, next) => {
     }
 };
 
+/**
+ * Descargar PDF de factura
+ * GET /api/dte/public/factura/:codigoGeneracion/pdf
+ */
+const descargarFacturaPDF = async (req, res, next) => {
+    try {
+        const { codigoGeneracion } = req.params;
+
+        if (!codigoGeneracion) {
+            throw new BadRequestError('Se requiere el código de generación');
+        }
+
+        const dteLocal = await dteRepository.buscarPorCodigoPublico(codigoGeneracion);
+
+        if (!dteLocal) {
+            throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
+        }
+
+        const dteData = dteLocal.jsonOriginal || dteLocal;
+
+        // Asegurar que emisor esté presente con formato correcto
+        if (typeof dteData === 'object') {
+            if (!dteData.emisor && dteLocal.emisor) {
+                dteData.emisor = dteLocal.emisor;
+            }
+            if (!dteData.selloRecibido && dteLocal.selloRecibido) {
+                dteData.selloRecibido = dteLocal.selloRecibido;
+            }
+        }
+
+        const { generarPDF } = require('../services/pdf-generator.service');
+        const pdfBuffer = await generarPDF(dteData);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Factura_${codigoGeneracion}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     crearFactura,
     listarFacturas,
     consultarFactura,
     conciliarFactura,
     consultarFacturaPublica,
+    descargarFacturaPDF,
     estadisticas,
     generarEjemplo,
     probarFirma,
