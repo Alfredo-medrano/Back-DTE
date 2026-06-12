@@ -9,6 +9,7 @@
  */
 
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 const logger = require('../../../shared/logger');
 const { generarPDF } = require('./pdf-generator.service');
 
@@ -20,10 +21,16 @@ const smtpPass = process.env.SMTP_PASS;
 const smtpFrom = process.env.SMTP_FROM || '"Factura DTE" <notificaciones@dte-saas.com>';
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+// Configuración Resend
+const resendApiKey = process.env.RESEND_API_KEY;
+const resendFrom = process.env.RESEND_FROM || smtpFrom;
+
 let transporter = null;
 
-// Inicializar el transporte solo si SMTP_HOST está configurado
-if (smtpHost && smtpUser && smtpPass) {
+// Inicializar el transporte solo si SMTP_HOST o RESEND_API_KEY está configurado
+if (resendApiKey) {
+    logger.info('Email: Servicio de envío de correos inicializado exitosamente (Resend REST API).');
+} else if (smtpHost && smtpUser && smtpPass) {
     transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
@@ -35,7 +42,7 @@ if (smtpHost && smtpUser && smtpPass) {
     });
     logger.info('SMTP: Servicio de envío de correos inicializado exitosamente.');
 } else {
-    logger.warn('SMTP: No se configuraron las variables SMTP. Las notificaciones por correo estarán deshabilitadas.');
+    logger.warn('Email: No se configuró Resend ni SMTP. Las notificaciones por correo estarán deshabilitadas.');
 }
 
 /**
@@ -252,9 +259,9 @@ const generarPlantillaHtml = ({
  * @param {object} params.emisor - Datos del emisor
  */
 const enviarCorreoFactura = async ({ dte, emisor }) => {
-    // Si no está habilitado SMTP, saltar
-    if (!transporter) {
-        logger.debug('SMTP: Envío de correo omitido (SMTP no configurado).', { codigoGeneracion: dte.codigoGeneracion });
+    // Si no está habilitado SMTP ni Resend, saltar
+    if (!resendApiKey && !transporter) {
+        logger.debug('Email: Envío de correo omitido (Email no configurado).', { codigoGeneracion: dte.codigoGeneracion });
         return;
     }
 
@@ -335,23 +342,63 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
                 });
             }
 
-            const mailOptions = {
-                from: smtpFrom,
-                to: receptorCorreo,
-                subject: `Comprobante de Factura Electrónica — ${emisor.nombre}`,
-                html: htmlContent,
-                attachments
-            };
+            if (resendApiKey) {
+                // Envío vía Resend REST API
+                const url = 'https://api.resend.com/emails';
+                
+                const resendAttachments = attachments.map(att => {
+                    const base64Content = Buffer.isBuffer(att.content)
+                        ? att.content.toString('base64')
+                        : typeof att.content === 'string'
+                            ? Buffer.from(att.content).toString('base64')
+                            : att.content;
+                    
+                    return {
+                        filename: att.filename,
+                        content: base64Content
+                    };
+                });
 
-            const info = await transporter.sendMail(mailOptions);
-            logger.info('SMTP: Correo de factura enviado con éxito', {
-                codigoGeneracion,
-                messageId: info.messageId,
-                destinatario: receptorCorreo
-            });
+                const payload = {
+                    from: resendFrom,
+                    to: Array.isArray(receptorCorreo) ? receptorCorreo : [receptorCorreo],
+                    subject: `Comprobante de Factura Electrónica — ${emisor.nombre}`,
+                    html: htmlContent,
+                    attachments: resendAttachments
+                };
+
+                const resendResponse = await axios.post(url, payload, {
+                    headers: {
+                        'Authorization': `Bearer ${resendApiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                logger.info('Resend: Correo de factura enviado con éxito', {
+                    codigoGeneracion,
+                    messageId: resendResponse.data?.id,
+                    destinatario: receptorCorreo
+                });
+            } else {
+                // Envío vía SMTP clásico (Nodemailer)
+                const mailOptions = {
+                    from: smtpFrom,
+                    to: receptorCorreo,
+                    subject: `Comprobante de Factura Electrónica — ${emisor.nombre}`,
+                    html: htmlContent,
+                    attachments
+                };
+
+                const info = await transporter.sendMail(mailOptions);
+                logger.info('SMTP: Correo de factura enviado con éxito', {
+                    codigoGeneracion,
+                    messageId: info.messageId,
+                    destinatario: receptorCorreo
+                });
+            }
 
         } catch (mailError) {
-            logger.error('SMTP ERROR: Fallo al enviar correo de DTE', {
+            logger.error('Email ERROR: Fallo al enviar correo de DTE', {
                 codigoGeneracion,
                 destinatario: receptorCorreo,
                 error: mailError.message,
@@ -359,7 +406,7 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
             });
         }
     }).catch((fatalErr) => {
-        logger.error('SMTP FATAL: Excepción no controlada en promesa de envío', {
+        logger.error('Email FATAL: Excepción no controlada en promesa de envío', {
             codigoGeneracion,
             error: fatalErr.message
         });
