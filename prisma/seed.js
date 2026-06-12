@@ -26,7 +26,7 @@ async function main() {
     console.log('✅ Tenant creado:', tenant.nombre);
 
     // Crear emisor con datos de .env (retrocompatibilidad)
-    const emisorExistente = await prisma.emisor.findUnique({
+    const emisorExistente = await prisma.emisor.findFirst({
         where: { nit: process.env.NIT_EMISOR || '070048272' },
     });
 

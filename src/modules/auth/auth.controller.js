@@ -33,7 +33,7 @@ const login = async (req, res, next) => {
 
         if (response.data?.status === 'OK' && response.data?.body?.token) {
             // MH Auth successful. Find existing Emisor (NO auto-creation).
-            const emisor = await prisma.emisor.findUnique({ where: { nit } });
+            const emisor = await prisma.emisor.findFirst({ where: { nit } });
 
             // SECURITY FIX (C3): Login NEVER auto-creates tenants.
             // Unregistered NITs must go through POST /api/auth/register first.

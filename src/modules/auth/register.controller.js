@@ -50,7 +50,7 @@ const register = async (req, res) => {
         const nitLimpio = data.nit.replace(/-/g, '');
 
         // ── 2. Verificar NIT no duplicado ──────────
-        const emisorExistente = await prisma.emisor.findUnique({
+        const emisorExistente = await prisma.emisor.findFirst({
             where: { nit: nitLimpio },
         });
 
