@@ -27,8 +27,8 @@ const registroSchema = z.object({
 
     nit: z.string()
         .regex(
-            /^\d{4}-\d{6}-\d{3}-\d{1}$/,
-            'Formato de NIT inválido. Usar: 0000-000000-000-0'
+            /^(?:\d{4}-\d{6}-\d{3}-\d{1}|\d{8}-\d{1})$/,
+            'Formato de NIT/DUI inválido. Usar NIT (0000-000000-000-0) o DUI (00000000-0)'
         ),
 
     nrc: z.string()
