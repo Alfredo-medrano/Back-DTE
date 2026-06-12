@@ -8,17 +8,35 @@ const { prisma } = require('../src/shared/db/prisma');
 const crypto = require('crypto');
 
 // Configuración de encriptación (misma que tenant.service.js)
-const ALGORITHM = 'aes-256-cbc';
-const CRYPTO_KEY = process.env.CRYPTO_SECRET_KEY || 'default-secret-key-change-in-production';
+const CRYPTO_SECRET_KEY = process.env.CRYPTO_SECRET_KEY;
+const CRYPTO_SALT = process.env.CRYPTO_SALT;
+
+if (!CRYPTO_SECRET_KEY || CRYPTO_SECRET_KEY.length < 32) {
+    console.error('❌ [SECURITY] CRYPTO_SECRET_KEY no está definida o tiene menos de 32 caracteres.');
+    process.exit(1);
+}
+if (!CRYPTO_SALT || CRYPTO_SALT.length < 32) {
+    console.error('❌ [SECURITY] CRYPTO_SALT no está definida o tiene menos de 32 caracteres.');
+    process.exit(1);
+}
+
+const GCM_KEY = crypto.scryptSync(
+    CRYPTO_SECRET_KEY,
+    Buffer.from(CRYPTO_SALT, 'hex'),
+    32
+);
+
+const ALGORITHM_GCM = 'aes-256-gcm';
 
 const encriptar = (texto) => {
-    const iv = crypto.randomBytes(16);
-    const key = Buffer.from(CRYPTO_KEY.substring(0, 32).padEnd(32, '0'));
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv(ALGORITHM_GCM, GCM_KEY, iv);
     let encrypted = cipher.update(texto, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
+    const authTag = cipher.getAuthTag().toString('hex');
+    return `${iv.toString('hex')}:${authTag}:${encrypted}`;
 };
+
 
 async function main() {
     console.log('🔄 Actualizando emisor con credenciales reales de Hacienda...\n');

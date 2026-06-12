@@ -44,21 +44,6 @@ const config = {
     },
 };
 
-// Validación de configuración requerida
-const validarConfig = () => {
-    const requeridos = [
-        { key: 'mh.claveApi', value: config.mh.claveApi },
-        { key: 'mh.clavePublica', value: config.mh.clavePublica },
-        { key: 'mh.clavePrivada', value: config.mh.clavePrivada },
-    ];
 
-    const faltantes = requeridos.filter(req => !req.value);
-
-    if (faltantes.length > 0) {
-        console.warn('⚠️  Variables de entorno faltantes:', faltantes.map(f => f.key).join(', '));
-    }
-};
-
-validarConfig();
 
 module.exports = config;

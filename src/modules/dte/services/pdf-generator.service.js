@@ -339,10 +339,23 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
     `;
 };
 
+let browserInstance = null;
+
+const getBrowser = async () => {
+    if (!browserInstance || !browserInstance.connected) {
+        browserInstance = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+    }
+    return browserInstance;
+};
+
 /**
  * Genera el Buffer del PDF usando Puppeteer
  */
 const generarPDF = async (dte) => {
+    let page = null;
     try {
         const dteObj = extraerDteObj(dte);
         if (!dteObj) {
@@ -362,13 +375,9 @@ const generarPDF = async (dte) => {
         // 2. Armar el HTML final
         const html = generarHTMLFactura(dteObj, qrDataUrl);
 
-        // 3. Lanzar Puppeteer y renderizar PDF
-        const browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
-        
-        const page = await browser.newPage();
+        // 3. Lanzar Puppeteer y renderizar PDF usando singleton
+        const browser = await getBrowser();
+        page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
         
         const pdfBuffer = await page.pdf({
@@ -382,12 +391,17 @@ const generarPDF = async (dte) => {
             }
         });
         
-        await browser.close();
         return pdfBuffer;
 
     } catch (error) {
         logger.error('Error generando PDF con Puppeteer', { error: error.message });
         throw error;
+    } finally {
+        if (page) {
+            await page.close().catch((err) => {
+                logger.error('Error cerrando página de Puppeteer', { error: err.message });
+            });
+        }
     }
 };
 

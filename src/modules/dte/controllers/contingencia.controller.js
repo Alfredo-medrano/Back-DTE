@@ -147,15 +147,17 @@ const desactivarContingencia = async (req, res, next) => {
             }
         });
 
-        logger.info(`Modo contingencia manual DESACTIVADO para emisor ${emisor.nit}. Iniciando regularización...`, { emisorId });
+        logger.info(`Modo contingencia manual DESACTIVADO para emisor ${emisor.nit}. Iniciando regularización en segundo plano...`, { emisorId });
 
-        // 2. Disparar la regularización de la cola acumulada
-        const resultReg = await dteOrchestrator.regularizarContingencia({
+        // 2. Disparar la regularización de la cola acumulada (asíncrono)
+        dteOrchestrator.regularizarContingencia({
             emisorId,
             fInicio: emisor.contingenciaFInicio,
             hInicio: emisor.contingenciaHInicio,
             tipoContingencia: emisor.contingenciaTipo,
             motivoContingencia: emisor.contingenciaMotivo
+        }).catch(err => {
+            logger.error(`Error en regularización automática tras desactivar contingencia: ${err.message}`);
         });
 
         // 3. Limpiar fecha/hora de inicio en el emisor
@@ -167,10 +169,9 @@ const desactivarContingencia = async (req, res, next) => {
             }
         });
 
-        res.json({
+        res.status(202).json({
             exito: true,
-            mensaje: 'Modo contingencia manual desactivado. Regularización procesada.',
-            datos: resultReg
+            mensaje: 'Modo contingencia manual desactivado. Regularización iniciada en segundo plano.',
         });
     } catch (error) {
         next(error);
@@ -185,16 +186,17 @@ const regularizarManual = async (req, res, next) => {
     try {
         const emisorId = req.emisor.id;
         
-        logger.info(`Disparo manual de regularización de contingencia`, { emisorId });
+        logger.info(`Disparo manual de regularización de contingencia en segundo plano`, { emisorId });
 
-        const resultReg = await dteOrchestrator.regularizarContingencia({
+        dteOrchestrator.regularizarContingencia({
             emisorId
+        }).catch(err => {
+            logger.error(`Error en regularización manual de contingencia: ${err.message}`);
         });
 
-        res.json({
+        res.status(202).json({
             exito: true,
-            mensaje: 'Sincronización de contingencia procesada.',
-            datos: resultReg
+            mensaje: 'Sincronización de contingencia iniciada en segundo plano.',
         });
     } catch (error) {
         next(error);

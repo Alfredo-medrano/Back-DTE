@@ -68,7 +68,7 @@ module.exports = {
             instances: 1, // Solo una instancia para evitar duplicados
             exec_mode: 'fork',
 
-            autorestart: true,
+            autorestart: false,
             watch: false,
             max_memory_restart: '512M',
 
@@ -77,12 +77,15 @@ module.exports = {
 
             env: {
                 NODE_ENV: 'development',
+                RETRY_RUN_ONCE: 'true',
             },
             env_staging: {
                 NODE_ENV: 'staging',
+                RETRY_RUN_ONCE: 'true',
             },
             env_production: {
                 NODE_ENV: 'production',
+                RETRY_RUN_ONCE: 'true',
             },
 
             error_file: './logs/worker-error.log',

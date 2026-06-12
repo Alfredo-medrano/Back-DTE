@@ -46,7 +46,7 @@ model Emisor {
   id              String  @id @default(uuid())
   tenantId        String
   // Datos fiscales
-  nit             String  @unique
+  nit             String
   nrc             String
   nombre          String
   nombreComercial String?
@@ -96,6 +96,7 @@ model Emisor {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dtes   Dte[]
 
+  @@unique([tenantId, nit])
   @@map("emisores")
 }
 
@@ -144,7 +145,7 @@ model Dte {
 
   // Identificación MH
   codigoGeneracion String @unique
-  numeroControl    String @unique
+  numeroControl    String
   tipoDte          String // 01, 03, 05, 06, 11, 14
   version          Int    @default(1)
   ambiente         String @default("00")
@@ -202,6 +203,7 @@ model Dte {
   @@index([status, intentos])
   // Índice para el worker de contingencia
   @@index([status, fechaLimiteTransmision])
+  @@unique([emisorId, numeroControl])
   @@map("dtes")
 }
 

@@ -57,3 +57,5 @@ build/
 scratch*.js
 retry*.js
 scripts/bombardeo_*.js
+*.pdf
+scripts/*.pdf

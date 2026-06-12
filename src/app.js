@@ -229,10 +229,6 @@ const server = app.listen(PORT, () => {
     console.log(`🚀 Puerto: ${PORT}  |  Ambiente: ${config.emisor.ambiente === '00' ? 'PRUEBAS' : 'PRODUCCIÓN'}`);
     console.log(`📡 Endpoints: /api/dte/v2/facturar  |  /admin/tenants  |  /health`);
     console.log('========================================');
-
-    // Iniciar procesador de reintentos en background (cada 5 minutos)
-    retryQueue.iniciarProcesadorPeriodico(5);
-    logger.info('Retry queue processor started', { intervalMinutes: 5 });
 });
 // ========================================
 // GRACEFUL SHUTDOWN
