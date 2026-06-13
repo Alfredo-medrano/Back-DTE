@@ -69,6 +69,12 @@ model Emisor {
   mhClaveApi     String // Encriptado
   mhClavePrivada String // Encriptado
 
+  // Certificados y llaves (ENCRIPTADOS - Caso B)
+  mhPublicKey    String?
+  mhPrivateKey   String?
+  mhCertificado  String? // Certificado XML encriptado
+  certUploadedAt DateTime?
+
   // Ambiente
   ambiente String  @default("00") // 00=Pruebas, 01=Producción
   activo   Boolean @default(true)

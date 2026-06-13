@@ -547,6 +547,7 @@ const probarFirma = async (req, res, next) => {
             documento,
             nit: emisorConCredenciales.nit,
             clavePrivada: emisorConCredenciales.mhClavePrivada,
+            emisorId: emisorConCredenciales.id,
         });
 
         res.json({
@@ -706,6 +707,7 @@ const anularDTE = async (req, res, next) => {
             documento: documentoAnulacion,
             nit: emisorConCredenciales.nit,
             clavePrivada: emisorConCredenciales.mhClavePrivada,
+            emisorId: emisorConCredenciales.id,
         });
 
         if (!resultadoFirma.exito) {

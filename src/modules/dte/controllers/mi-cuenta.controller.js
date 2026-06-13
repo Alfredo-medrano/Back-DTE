@@ -14,6 +14,16 @@ const { tenantService, apiKeyService } = require('../../iam/services');
 const { BadRequestError, NotFoundError } = require('../../../shared/errors');
 const { crearApiKeySchema } = require('../../iam/dtos/admin.schema');
 const { prisma } = require('../../../shared/db');
+const multer = require('multer');
+const { procesarCertificado } = require('../../../shared/utils/cert-helper');
+const { encrypt } = require('../../../shared/services/encryption.service');
+const logger = require('../../../shared/logger');
+
+// Configuración de multer en memoria (para no guardar a disco temporalmente)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1024 * 1024 } // 1MB max
+}).single('certificado');
 
 /**
  * Obtener información de la cuenta propia (Tenant)
@@ -155,6 +165,91 @@ const alertasContingencia = async (req, res, next) => {
     }
 };
 
+/**
+ * Cargar certificado para un emisor del tenant
+ * POST /api/dte/v2/mi-cuenta/emisores/:emisorId/certificado
+ */
+const cargarCertificado = async (req, res, next) => {
+    // Usar multer para procesar la subida
+    upload(req, res, async (err) => {
+        try {
+            if (err) {
+                throw new BadRequestError(`Error al subir archivo: ${err.message}`);
+            }
+
+            if (!req.file) {
+                throw new BadRequestError('El archivo del certificado es requerido (campo "certificado").');
+            }
+
+            const { emisorId } = req.params;
+            const tenantId = req.tenant.id;
+
+            // 1. Validar que el emisorId pertenece al tenant autenticado
+            const emisor = await prisma.emisor.findUnique({
+                where: { id: emisorId }
+            });
+
+            if (!emisor || emisor.tenantId !== tenantId) {
+                throw new NotFoundError('Emisor no encontrado o no pertenece a esta cuenta.');
+            }
+
+            // 2. Pasar el buffer a cert-helper.js para extraer y validar llaves
+            let certData = null;
+            try {
+                certData = procesarCertificado(req.file.buffer);
+            } catch (certError) {
+                throw new BadRequestError(`Certificado inválido: ${certError.message}`);
+            }
+
+            const { nit: nitDetectado, publicKeyPem, privateKeyPem, certificadoXml } = certData;
+
+            // Validar que el NIT del certificado coincida con el NIT del emisor
+            const nitCertPadded = nitDetectado.padStart(14, '0');
+            const nitEmisorPadded = emisor.nit.padStart(14, '0');
+            if (nitCertPadded !== nitEmisorPadded) {
+                throw new BadRequestError(`El NIT del certificado (${nitDetectado}) no coincide con el NIT del emisor (${emisor.nit}).`);
+            }
+
+            // 3. Cifrar llave pública, privada y el XML del certificado
+            let encryptedPublicKey = encrypt(publicKeyPem);
+            let encryptedPrivateKey = encrypt(privateKeyPem);
+            let encryptedCertificado = encrypt(certificadoXml);
+
+            // 4. Guardar en BD (campos mhPublicKey, mhPrivateKey, mhCertificado, certUploadedAt)
+            const certUploadedAt = new Date();
+            await prisma.emisor.update({
+                where: { id: emisorId },
+                data: {
+                    mhPublicKey: encryptedPublicKey,
+                    mhPrivateKey: encryptedPrivateKey,
+                    mhCertificado: encryptedCertificado,
+                    certUploadedAt
+                }
+            });
+
+            // 5. Limpiar variables sensibles asignando null antes de responder
+            certData = null;
+            encryptedPublicKey = null;
+            encryptedPrivateKey = null;
+            encryptedCertificado = null;
+
+            // En los logs solo registrar: "Certificado actualizado para emisorId X"
+            logger.info(`Certificado actualizado para emisorId ${emisorId}`);
+
+            // 6. Responder: { success: true, nitDetectado, fechaActualizacion }
+            res.json({
+                exito: true,
+                success: true,
+                nitDetectado,
+                fechaActualizacion: certUploadedAt
+            });
+
+        } catch (error) {
+            next(error);
+        }
+    });
+};
+
 module.exports = {
     obtenerMiCuenta,
     obtenerMisEmisores,
@@ -162,4 +257,5 @@ module.exports = {
     crearMiApiKey,
     revocarMiApiKey,
     alertasContingencia,
+    cargarCertificado,
 };

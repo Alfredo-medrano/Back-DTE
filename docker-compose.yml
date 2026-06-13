@@ -34,9 +34,8 @@ services:
     environment:
       # Configure as needed for your SVFE installation
       - TZ=America/El_Salvador
-    volumes:
-      # Mount certificates directory if needed by the signer
-      - ./certs:/app/certs:ro
+    tmpfs:
+      - /certs:rw,noexec,nosuid,size=16m
 
   # ────────────────────────────────────────────────────────
   # POSTGRESQL — Base de datos (solo desarrollo local)

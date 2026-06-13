@@ -111,6 +111,7 @@ async function transmitirDTE(dte) {
             documento: documentoDTE,
             nit: emisorConCredenciales.nit,
             clavePrivada: emisorConCredenciales.mhClavePrivada,
+            emisorId: emisorConCredenciales.id,
         });
 
         if (!resultadoFirma.exito) {

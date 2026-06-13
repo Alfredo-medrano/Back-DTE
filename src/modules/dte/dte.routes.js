@@ -41,6 +41,7 @@ v2Router.use(rateLimiter);
 // Autogestión de cuenta y API Keys
 v2Router.get('/mi-cuenta', miCuentaController.obtenerMiCuenta);
 v2Router.get('/mi-cuenta/emisores', miCuentaController.obtenerMisEmisores);
+v2Router.post('/mi-cuenta/emisores/:emisorId/certificado', miCuentaController.cargarCertificado);
 v2Router.get('/mi-cuenta/api-keys', miCuentaController.listarMisApiKeys);
 v2Router.post('/mi-cuenta/api-keys', miCuentaController.crearMiApiKey);
 v2Router.delete('/mi-cuenta/api-keys/:apiKeyId', miCuentaController.revocarMiApiKey);

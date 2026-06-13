@@ -87,6 +87,7 @@ const firmarYEnviar = async ({ documentoDTE, emisor, tipoDte }) => {
         documento: documentoDTE,
         nit: emisor.nit,
         clavePrivada: emisor.mhClavePrivada,
+        emisorId: emisor.id,
     });
 
     if (!resultadoFirma.exito) {
@@ -235,6 +236,7 @@ const procesarContingencia = async ({
         documento: documentoContingencia,
         nit: emisor.nit,
         clavePrivada: emisor.mhClavePrivada,
+        emisorId: emisor.id,
     });
 
     if (!resultadoFirma.exito) {
@@ -279,6 +281,7 @@ const procesarEventoContingencia = async ({
         documento: eventJson,
         nit: emisor.nit,
         clavePrivada: emisor.mhClavePrivada,
+        emisorId: emisor.id,
     });
 
     if (!resultadoFirma.exito) {

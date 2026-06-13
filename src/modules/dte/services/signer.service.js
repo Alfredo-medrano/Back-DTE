@@ -10,6 +10,10 @@
 const { dockerClient } = require('../../../shared/integrations');
 const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker');
 const logger = require('../../../shared/logger');
+const fs = require('fs');
+const path = require('path');
+const { prisma } = require('../../../shared/db');
+const { decrypt } = require('../../../shared/services/encryption.service');
 
 /**
  * Verifica si el contenedor Docker está activo
@@ -52,17 +56,56 @@ const verificarEstado = async () => {
 };
 
 /**
- * Firma un documento DTE con el contenedor Docker
+ * Firma un documento DTE con el contenedor Docker (CASO B — Escritura/Borrado temporal)
  * @param {object} params - Parámetros de firma
  * @param {object} params.documento - Documento JSON a firmar
- * @param {string} params.nit - NIT del emisor (formato Docker: 14 dígitos)
+ * @param {string} params.nit - NIT del emisor
  * @param {string} params.clavePrivada - Contraseña de la llave privada
+ * @param {string} [params.emisorId] - ID del emisor (opcional, fallback a NIT)
  * @returns {Promise<object>} Documento firmado en formato JWS
  */
-const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
+const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
+    let privateKey = null;
+    let certXml = null;
+    let crtFilePath = null;
+    let keyFilePath = null;
+
     try {
-        // Formatear NIT para Docker (14 dígitos)
         const nitDocker = nit.padStart(14, '0');
+
+        // 1. Obtener claves y certificado de la base de datos
+        const emisor = emisorId
+            ? await prisma.emisor.findUnique({
+                where: { id: emisorId },
+                select: { mhPrivateKey: true, mhCertificado: true }
+              })
+            : await prisma.emisor.findFirst({
+                where: { nit },
+                select: { mhPrivateKey: true, mhCertificado: true }
+              });
+
+        if (!emisor || !emisor.mhPrivateKey || !emisor.mhCertificado) {
+            throw new Error('El emisor no tiene certificado o llave privada configurada en la base de datos.');
+        }
+
+        // 2. Descifrar llaves
+        privateKey = decrypt(emisor.mhPrivateKey);
+        certXml = decrypt(emisor.mhCertificado);
+
+        // Convertir PEM a Buffer DER (el firmador Java espera binario DER para la llave privada)
+        const keyDer = Buffer.from(privateKey.replace(/-----BEGIN[^-]+-----|-----END[^-]+-----|\s+/g, ''), 'base64');
+
+        // 3. Escribir temporalmente en el volumen compartido
+        const certsDir = process.env.CERTS_DIR || path.join(__dirname, '..', '..', '..', '..', 'certs');
+        if (!fs.existsSync(certsDir)) {
+            fs.mkdirSync(certsDir, { recursive: true });
+        }
+
+        crtFilePath = path.join(certsDir, `${nitDocker}.crt`);
+        keyFilePath = path.join(certsDir, `${nitDocker}.key`);
+
+        fs.writeFileSync(crtFilePath, certXml, 'utf8');
+        fs.writeFileSync(keyFilePath, keyDer);
 
         logger.info('Enviando documento a firmar', { nit: nitDocker });
 
@@ -102,6 +145,25 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
             error: error.response?.data?.body?.mensaje || error.response?.data?.descripcion || error.message,
             mensaje: 'Error al firmar documento',
         };
+    } finally {
+        // 4. Borrado obligatorio de disco (RAM) en try/finally
+        try {
+            if (crtFilePath && fs.existsSync(crtFilePath)) {
+                fs.unlinkSync(crtFilePath);
+            }
+            if (keyFilePath && fs.existsSync(keyFilePath)) {
+                fs.unlinkSync(keyFilePath);
+            }
+            logger.info(`Archivos de firma temporal para el NIT ${nit} eliminados exitosamente del directorio temporal.`);
+        } catch (unlinkError) {
+            logger.error('Error al eliminar archivos temporales de firma:', { error: unlinkError.message });
+        }
+
+        // 5. Asignar null a las variables de llaves en memoria
+        privateKey = null;
+        certXml = null;
+        crtFilePath = null;
+        keyFilePath = null;
     }
 };
 
@@ -109,8 +171,8 @@ const firmarDocumento = async ({ documento, nit, clavePrivada }) => {
  * Firma un documento para anulación
  * @param {object} params - Parámetros de firma
  */
-const firmarAnulacion = async ({ documento, nit, clavePrivada }) => {
-    return await firmarDocumento({ documento, nit, clavePrivada });
+const firmarAnulacion = async ({ documento, nit, clavePrivada, emisorId }) => {
+    return await firmarDocumento({ documento, nit, clavePrivada, emisorId });
 };
 
 module.exports = {
