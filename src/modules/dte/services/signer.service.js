@@ -104,7 +104,10 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         const pubDer = Buffer.from(pubMatch[1].replace(/\s+/g, ''), 'base64');
 
         // 3. Escribir temporalmente en el volumen compartido
-        const certsDir = process.env.CERTS_DIR || path.join(__dirname, '..', '..', '..', '..', 'certs');
+        const certsDir = process.env.CERTS_DIR;
+        if (!certsDir) {
+            throw new Error('La variable de entorno CERTS_DIR no está configurada en el servidor.');
+        }
         if (!fs.existsSync(certsDir)) {
             fs.mkdirSync(certsDir, { recursive: true });
         }
