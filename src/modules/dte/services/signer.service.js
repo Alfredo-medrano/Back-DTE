@@ -122,6 +122,14 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
 
         logger.info('Enviando documento a firmar', { nit: nitDocker });
 
+        // Logs temporales solicitados para depuración
+        console.log('--- LOG TEMPORAL DE FIRMA ---');
+        console.log('CertsDir resuelto:', certsDir);
+        console.log('Archivos escritos en temp:', fs.existsSync(certsDir) ? fs.readdirSync(certsDir) : 'No existe directório');
+        console.log('Enviando NIT al Docker:', nitDocker);
+        console.log('Contraseña enviada al Docker (clavePrivada):', clavePrivada);
+        console.log('-----------------------------');
+
         const payload = {
             nit: nitDocker,
             activo: true,
