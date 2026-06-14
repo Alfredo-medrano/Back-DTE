@@ -90,11 +90,17 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         }
 
         // 2. Descifrar llaves
-        privateKey = decrypt(emisor.mhPrivateKey);
         certXml = decrypt(emisor.mhCertificado);
 
-        // Convertir PEM a Buffer DER (el firmador Java espera binario DER para la llave privada)
-        const keyDer = Buffer.from(privateKey.replace(/-----BEGIN[^-]+-----|-----END[^-]+-----|\s+/g, ''), 'base64');
+        // Extraer llave privada del XML (el firmador Java espera binario DER) o usar fallback de la DB
+        let keyDer;
+        const privMatch = certXml.match(/<privateKey>[\s\S]*?<encodied>([\s\S]*?)<\/encodied>/);
+        if (privMatch) {
+            keyDer = Buffer.from(privMatch[1].replace(/\s+/g, ''), 'base64');
+        } else {
+            privateKey = decrypt(emisor.mhPrivateKey);
+            keyDer = Buffer.from(privateKey.replace(/-----BEGIN[^-]+-----|-----END[^-]+-----|\s+/g, ''), 'base64');
+        }
 
         // Extraer llave pública del XML y convertir a DER
         const pubMatch = certXml.match(/<publicKey>[\s\S]*?<encodied>([\s\S]*?)<\/encodied>/);
