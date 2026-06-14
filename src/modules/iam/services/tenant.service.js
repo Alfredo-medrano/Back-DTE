@@ -198,6 +198,7 @@ const obtenerPorId = async (tenantId) => {
                     tipoEstablecimiento: true,
                     ambiente: true,
                     activo: true,
+                    certUploadedAt: true,
                     correlativoFE: true,
                     correlativoCCF: true,
                     correlativoNC: true,
