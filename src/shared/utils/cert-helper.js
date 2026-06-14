@@ -52,6 +52,10 @@ function procesarCertificado(buffer) {
     }
     const privBase64 = privMatch[1].replace(/\s+/g, '');
 
+    // Extraer clave del certificado
+    const claveMatch = content.match(/<privateKey>[\s\S]*?<clave>([\s\S]*?)<\/clave>/);
+    const clave = claveMatch ? claveMatch[1].trim() : null;
+
     // 4. Formatear a PEM
     const publicKeyPem = formatPEM(pubBase64, 'PUBLIC KEY');
     // Nota: Como la clave privada viene encriptada (formato PKCS#8 cifrado de Hacienda),
@@ -90,7 +94,8 @@ function procesarCertificado(buffer) {
         nit,
         publicKeyPem,
         privateKeyPem,
-        certificadoXml: content
+        certificadoXml: content,
+        clave
     };
 }
 

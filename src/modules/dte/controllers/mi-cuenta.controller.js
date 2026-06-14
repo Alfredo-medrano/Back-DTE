@@ -217,14 +217,32 @@ const cargarCertificado = async (req, res, next) => {
 
             // 4. Guardar en BD (campos mhPublicKey, mhPrivateKey, mhCertificado, certUploadedAt)
             const certUploadedAt = new Date();
+            
+            const updateData = {
+                mhPublicKey: encryptedPublicKey,
+                mhPrivateKey: encryptedPrivateKey,
+                mhCertificado: encryptedCertificado,
+                certUploadedAt
+            };
+
+            // Encriptar credenciales de Hacienda adicionales si fueron provistas
+            let encClaveApi = null;
+            let encClavePrivada = null;
+            if (req.body.mhClaveApi) {
+                encClaveApi = tenantService.encriptar(req.body.mhClaveApi);
+                updateData.mhClaveApi = encClaveApi;
+            }
+            if (req.body.mhClavePrivada) {
+                encClavePrivada = tenantService.encriptar(req.body.mhClavePrivada);
+                updateData.mhClavePrivada = encClavePrivada;
+            } else if (certData.clave) {
+                encClavePrivada = tenantService.encriptar(certData.clave);
+                updateData.mhClavePrivada = encClavePrivada;
+            }
+
             await prisma.emisor.update({
                 where: { id: emisorId },
-                data: {
-                    mhPublicKey: encryptedPublicKey,
-                    mhPrivateKey: encryptedPrivateKey,
-                    mhCertificado: encryptedCertificado,
-                    certUploadedAt
-                }
+                data: updateData
             });
 
             // 5. Limpiar variables sensibles asignando null antes de responder
@@ -232,6 +250,8 @@ const cargarCertificado = async (req, res, next) => {
             encryptedPublicKey = null;
             encryptedPrivateKey = null;
             encryptedCertificado = null;
+            encClaveApi = null;
+            encClavePrivada = null;
 
             // En los logs solo registrar: "Certificado actualizado para emisorId X"
             logger.info(`Certificado actualizado para emisorId ${emisorId}`);

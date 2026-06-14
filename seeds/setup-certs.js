@@ -4,6 +4,7 @@ const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { procesarCertificado } = require('../src/shared/utils/cert-helper');
 const { encrypt } = require('../src/shared/services/encryption.service');
+const { tenantService } = require('../src/modules/iam/services');
 
 const prisma = new PrismaClient();
 const certPath = path.join(__dirname, '..', 'docs', 'Certificado_070048272.crt');
@@ -53,14 +54,19 @@ async function main() {
 
     // 5. Guardar en BD
     console.log('Actualizando emisor en la base de datos...');
+    const updateData = {
+        mhPublicKey: encryptedPublicKey,
+        mhPrivateKey: encryptedPrivateKey,
+        mhCertificado: encryptedCertificado,
+        certUploadedAt: new Date()
+    };
+    if (certData.clave) {
+        updateData.mhClavePrivada = tenantService.encriptar(certData.clave);
+    }
+
     await prisma.emisor.update({
         where: { id: emisor.id },
-        data: {
-            mhPublicKey: encryptedPublicKey,
-            mhPrivateKey: encryptedPrivateKey,
-            mhCertificado: encryptedCertificado,
-            certUploadedAt: new Date()
-        }
+        data: updateData
     });
 
     console.log('\n==================================================');

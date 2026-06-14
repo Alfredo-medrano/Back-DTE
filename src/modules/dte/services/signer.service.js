@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../../../shared/db');
 const { decrypt } = require('../../../shared/services/encryption.service');
+const { tenantService } = require('../../iam/services');
 
 /**
  * Verifica si el contenedor Docker está activo
@@ -65,32 +66,35 @@ const verificarEstado = async () => {
  * @returns {Promise<object>} Documento firmado en formato JWS
  */
 const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
-    let privateKey = null;
     let certXml = null;
     let crtFilePath = null;
-    let pubFilePath = null;
     let keyFilePath = null;
 
     try {
         const nitDocker = nit.padStart(14, '0');
 
-        // 1. Obtener claves y certificado de la base de datos
+        // 1. Obtener claves, certificado y contraseña de la base de datos
         const emisor = emisorId
             ? await prisma.emisor.findUnique({
                 where: { id: emisorId },
-                select: { mhPrivateKey: true, mhCertificado: true }
+                select: { mhPrivateKey: true, mhCertificado: true, mhClavePrivada: true }
               })
             : await prisma.emisor.findFirst({
                 where: { nit },
-                select: { mhPrivateKey: true, mhCertificado: true }
+                select: { mhPrivateKey: true, mhCertificado: true, mhClavePrivada: true }
               });
 
         if (!emisor || !emisor.mhPrivateKey || !emisor.mhCertificado) {
             throw new Error('El emisor no tiene certificado o llave privada configurada en la base de datos.');
         }
 
-        // 2. Descifrar llaves
+        // 2. Descifrar llaves y contraseña
         certXml = decrypt(emisor.mhCertificado);
+
+        let passphrase = clavePrivada;
+        if (!passphrase || passphrase === 'PENDIENTE_PFX') {
+            passphrase = tenantService.desencriptar(emisor.mhClavePrivada);
+        }
 
         // Extraer llave privada del XML (el firmador Java espera binario DER) o usar fallback de la DB
         let keyDer;
@@ -98,16 +102,9 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         if (privMatch) {
             keyDer = Buffer.from(privMatch[1].replace(/\s+/g, ''), 'base64');
         } else {
-            privateKey = decrypt(emisor.mhPrivateKey);
+            const privateKey = decrypt(emisor.mhPrivateKey);
             keyDer = Buffer.from(privateKey.replace(/-----BEGIN[^-]+-----|-----END[^-]+-----|\s+/g, ''), 'base64');
         }
-
-        // Extraer llave pública del XML y convertir a DER
-        const pubMatch = certXml.match(/<publicKey>[\s\S]*?<encodied>([\s\S]*?)<\/encodied>/);
-        if (!pubMatch) {
-            throw new Error('El certificado no contiene un tag <publicKey> con <encodied> válido.');
-        }
-        const pubDer = Buffer.from(pubMatch[1].replace(/\s+/g, ''), 'base64');
 
         // 3. Escribir temporalmente en el volumen compartido
         const certsDir = process.env.CERTS_DIR;
@@ -119,11 +116,9 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         }
 
         crtFilePath = path.join(certsDir, `${nitDocker}.crt`);
-        pubFilePath = path.join(certsDir, `${nitDocker}.pub`);
         keyFilePath = path.join(certsDir, `${nitDocker}.key`);
 
         fs.writeFileSync(crtFilePath, certXml, 'utf8');
-        fs.writeFileSync(pubFilePath, pubDer);
         fs.writeFileSync(keyFilePath, keyDer);
 
         logger.info('Enviando documento a firmar', { nit: nitDocker });
@@ -133,13 +128,13 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         console.log('CertsDir resuelto:', certsDir);
         console.log('Archivos escritos en temp:', fs.existsSync(certsDir) ? fs.readdirSync(certsDir) : 'No existe directório');
         console.log('Enviando NIT al Docker:', nitDocker);
-        console.log('Contraseña enviada al Docker (clavePrivada):', clavePrivada);
+        console.log('Contraseña enviada al Docker (passwordPri):', passphrase);
         console.log('-----------------------------');
 
         const payload = {
             nit: nitDocker,
             activo: true,
-            passwordPri: clavePrivada,
+            passwordPri: passphrase,
             dteJson: documento,
         };
 
@@ -178,9 +173,6 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             if (crtFilePath && fs.existsSync(crtFilePath)) {
                 fs.unlinkSync(crtFilePath);
             }
-            if (pubFilePath && fs.existsSync(pubFilePath)) {
-                fs.unlinkSync(pubFilePath);
-            }
             if (keyFilePath && fs.existsSync(keyFilePath)) {
                 fs.unlinkSync(keyFilePath);
             }
@@ -190,10 +182,8 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         }
 
         // 5. Asignar null a las variables de llaves en memoria
-        privateKey = null;
         certXml = null;
         crtFilePath = null;
-        pubFilePath = null;
         keyFilePath = null;
     }
 };
