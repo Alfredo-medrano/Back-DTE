@@ -68,6 +68,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
     let privateKey = null;
     let certXml = null;
     let crtFilePath = null;
+    let pubFilePath = null;
     let keyFilePath = null;
 
     try {
@@ -95,6 +96,13 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         // Convertir PEM a Buffer DER (el firmador Java espera binario DER para la llave privada)
         const keyDer = Buffer.from(privateKey.replace(/-----BEGIN[^-]+-----|-----END[^-]+-----|\s+/g, ''), 'base64');
 
+        // Extraer llave pública del XML y convertir a DER
+        const pubMatch = certXml.match(/<publicKey>[\s\S]*?<encodied>([\s\S]*?)<\/encodied>/);
+        if (!pubMatch) {
+            throw new Error('El certificado no contiene un tag <publicKey> con <encodied> válido.');
+        }
+        const pubDer = Buffer.from(pubMatch[1].replace(/\s+/g, ''), 'base64');
+
         // 3. Escribir temporalmente en el volumen compartido
         const certsDir = process.env.CERTS_DIR || path.join(__dirname, '..', '..', '..', '..', 'certs');
         if (!fs.existsSync(certsDir)) {
@@ -102,9 +110,11 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         }
 
         crtFilePath = path.join(certsDir, `${nitDocker}.crt`);
+        pubFilePath = path.join(certsDir, `${nitDocker}.pub`);
         keyFilePath = path.join(certsDir, `${nitDocker}.key`);
 
         fs.writeFileSync(crtFilePath, certXml, 'utf8');
+        fs.writeFileSync(pubFilePath, pubDer);
         fs.writeFileSync(keyFilePath, keyDer);
 
         logger.info('Enviando documento a firmar', { nit: nitDocker });
@@ -151,6 +161,9 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             if (crtFilePath && fs.existsSync(crtFilePath)) {
                 fs.unlinkSync(crtFilePath);
             }
+            if (pubFilePath && fs.existsSync(pubFilePath)) {
+                fs.unlinkSync(pubFilePath);
+            }
             if (keyFilePath && fs.existsSync(keyFilePath)) {
                 fs.unlinkSync(keyFilePath);
             }
@@ -163,6 +176,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
         privateKey = null;
         certXml = null;
         crtFilePath = null;
+        pubFilePath = null;
         keyFilePath = null;
     }
 };
