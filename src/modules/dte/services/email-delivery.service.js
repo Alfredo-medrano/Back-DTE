@@ -398,10 +398,12 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
             }
 
         } catch (mailError) {
+            const detalles = mailError.response ? mailError.response.data : null;
             logger.error('Email ERROR: Fallo al enviar correo de DTE', {
                 codigoGeneracion,
                 destinatario: receptorCorreo,
                 error: mailError.message,
+                detalles,
                 stack: mailError.stack
             });
         }

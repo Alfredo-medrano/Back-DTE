@@ -235,9 +235,8 @@ const cargarCertificado = async (req, res, next) => {
             if (req.body.mhClavePrivada) {
                 encClavePrivada = tenantService.encriptar(req.body.mhClavePrivada);
                 updateData.mhClavePrivada = encClavePrivada;
-            } else if (certData.clave) {
-                encClavePrivada = tenantService.encriptar(certData.clave);
-                updateData.mhClavePrivada = encClavePrivada;
+            } else {
+                throw new BadRequestError('La contraseña del certificado es requerida.');
             }
 
             await prisma.emisor.update({

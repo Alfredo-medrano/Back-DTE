@@ -52,9 +52,7 @@ function procesarCertificado(buffer) {
     }
     const privBase64 = privMatch[1].replace(/\s+/g, '');
 
-    // Extraer clave del certificado
-    const claveMatch = content.match(/<privateKey>[\s\S]*?<clave>([\s\S]*?)<\/clave>/);
-    const clave = claveMatch ? claveMatch[1].trim() : null;
+    // No intentamos extraer la contraseña porque el usuario debe proveerla para desencriptar.
 
     // 4. Formatear a PEM
     const publicKeyPem = formatPEM(pubBase64, 'PUBLIC KEY');
@@ -94,8 +92,7 @@ function procesarCertificado(buffer) {
         nit,
         publicKeyPem,
         privateKeyPem,
-        certificadoXml: content,
-        clave
+        certificadoXml: content
     };
 }
 

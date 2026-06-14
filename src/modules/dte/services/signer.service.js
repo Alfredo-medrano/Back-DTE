@@ -1,3 +1,4 @@
+
 /**
  * ========================================
  * SERVICIO DE FIRMA
@@ -78,11 +79,11 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             ? await prisma.emisor.findUnique({
                 where: { id: emisorId },
                 select: { mhPrivateKey: true, mhCertificado: true, mhClavePrivada: true }
-              })
+            })
             : await prisma.emisor.findFirst({
                 where: { nit },
                 select: { mhPrivateKey: true, mhCertificado: true, mhClavePrivada: true }
-              });
+            });
 
         if (!emisor || !emisor.mhPrivateKey || !emisor.mhCertificado) {
             throw new Error('El emisor no tiene certificado o llave privada configurada en la base de datos.');

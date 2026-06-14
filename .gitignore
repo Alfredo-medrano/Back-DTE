@@ -55,6 +55,7 @@ build/
 
 # Temporary Debug/Test Scripts
 scratch*.js
+scratch/
 retry*.js
 scripts/bombardeo_*.js
 *.pdf
