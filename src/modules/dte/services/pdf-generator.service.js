@@ -111,6 +111,62 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
     // Total
     const totalPagar = resumen.totalPagar !== undefined ? resumen.totalPagar : (resumen.montoTotalOperacion || 0);
 
+    const tieneRetenciones = ((resumen.reteRenta || 0) > 0 || (resumen.ivaRete1 || 0) > 0);
+    
+    let htmlTotalesRows = `
+        <tr>
+            <td>Subtotal Ventas:</td>
+            <td style="text-align: right;">$${(resumen.subTotalVentas || 0).toFixed(2)}</td>
+        </tr>
+    `;
+    
+    if (resumen.totalIva) {
+        htmlTotalesRows += `
+            <tr>
+                <td>IVA (13%):</td>
+                <td style="text-align: right;">$${resumen.totalIva.toFixed(2)}</td>
+            </tr>
+        `;
+    }
+    
+    if (tieneRetenciones) {
+        htmlTotalesRows += `
+            <tr style="font-weight: 500; border-top: 1px solid #e2e8f0;">
+                <td>Monto Total Operación:</td>
+                <td style="text-align: right;">$${(resumen.montoTotalOperacion || 0).toFixed(2)}</td>
+            </tr>
+        `;
+    }
+    
+    if (resumen.reteRenta) {
+        htmlTotalesRows += `
+            <tr style="color: #c2410c;">
+                <td>Retención Renta (10%):</td>
+                <td style="text-align: right;">-$${resumen.reteRenta.toFixed(2)}</td>
+            </tr>
+        `;
+    }
+    
+    if (resumen.ivaRete1) {
+        htmlTotalesRows += `
+            <tr style="color: #c2410c;">
+                <td>Retención IVA (1%):</td>
+                <td style="text-align: right;">-$${resumen.ivaRete1.toFixed(2)}</td>
+            </tr>
+        `;
+    }
+    
+    if (resumen.ivaPerci1) {
+        htmlTotalesRows += `
+            <tr style="color: #047857;">
+                <td>Percepción IVA (1%):</td>
+                <td style="text-align: right;">+$${resumen.ivaPerci1.toFixed(2)}</td>
+            </tr>
+        `;
+    }
+    
+    const labelTotal = tieneRetenciones ? 'LÍQUIDO A ENTREGAR:' : 'TOTAL A PAGAR:';
+
     // Formato de tabla de ítems
     const htmlItems = cuerpo.map(item => `
         <tr>
@@ -303,22 +359,9 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
             <p style="font-size: 10px; color: #64748b; margin-top: 5px;">Escanee para consultar en línea</p>
         </div>
         <table class="totals-table">
-            <tr>
-                <td>Subtotal Ventas:</td>
-                <td style="text-align: right;">$${(resumen.subTotalVentas || 0).toFixed(2)}</td>
-            </tr>
-            ${resumen.totalIva ? 
-            '<tr>' +
-                '<td>IVA (13%):</td>' +
-                '<td style="text-align: right;">$' + resumen.totalIva.toFixed(2) + '</td>' +
-            '</tr>' : ''}
-            ${resumen.ivaPerci1 ? 
-            '<tr>' +
-                '<td>Percepción de IVA:</td>' +
-                '<td style="text-align: right;">$' + resumen.ivaPerci1.toFixed(2) + '</td>' +
-            '</tr>' : ''}
+            ${htmlTotalesRows}
             <tr class="total-row">
-                <td>TOTAL A PAGAR:</td>
+                <td>${labelTotal}</td>
                 <td style="text-align: right;">$${totalPagar.toFixed(2)}</td>
             </tr>
         </table>
