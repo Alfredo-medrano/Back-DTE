@@ -111,60 +111,98 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
     // Total
     const totalPagar = resumen.totalPagar !== undefined ? resumen.totalPagar : (resumen.montoTotalOperacion || 0);
 
-    const tieneRetenciones = ((resumen.reteRenta || 0) > 0 || (resumen.ivaRete1 || 0) > 0);
+    const isCCF = identificacion.tipoDte === '03';
+    const isFSE = identificacion.tipoDte === '14';
     
-    let htmlTotalesRows = `
-        <tr>
-            <td>Subtotal Ventas:</td>
-            <td style="text-align: right;">$${(resumen.subTotalVentas || 0).toFixed(2)}</td>
-        </tr>
-    `;
-    
-    if (resumen.totalIva) {
-        htmlTotalesRows += `
-            <tr>
-                <td>IVA (13%):</td>
-                <td style="text-align: right;">$${resumen.totalIva.toFixed(2)}</td>
-            </tr>
-        `;
+    // Extraer IVA de tributos si es CCF
+    let totalIva = resumen.totalIva || 0;
+    if (isCCF && !totalIva && resumen.tributos) {
+        const tIva = resumen.tributos.find(t => t.codigo === '20');
+        if (tIva) totalIva = tIva.valor;
     }
     
-    if (tieneRetenciones) {
-        htmlTotalesRows += `
+    let htmlTotalesRows = '';
+    
+    if (isCCF) {
+        htmlTotalesRows = `
+            <tr>
+                <td>Subtotal Ventas Gravadas:</td>
+                <td style="text-align: right;">$${(resumen.totalGravada || resumen.subTotal || 0).toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td>Ventas No Sujetas:</td>
+                <td style="text-align: right;">$${(resumen.totalNoSuj || 0).toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td>Ventas Exentas:</td>
+                <td style="text-align: right;">$${(resumen.totalExenta || 0).toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td>Descuento Comercial:</td>
+                <td style="text-align: right;">-$${(resumen.totalDescu || 0).toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td>IVA Gravado (13%):</td>
+                <td style="text-align: right;">$${parseFloat(totalIva).toFixed(2)}</td>
+            </tr>
             <tr style="font-weight: 500; border-top: 1px solid #e2e8f0;">
                 <td>Monto Total Operación:</td>
                 <td style="text-align: right;">$${(resumen.montoTotalOperacion || 0).toFixed(2)}</td>
             </tr>
-        `;
-    }
-    
-    if (resumen.reteRenta) {
-        htmlTotalesRows += `
             <tr style="color: #c2410c;">
-                <td>Retención Renta (10%):</td>
-                <td style="text-align: right;">-$${resumen.reteRenta.toFixed(2)}</td>
+                <td>Retención Impuesto Renta (10%):</td>
+                <td style="text-align: right;">-$${(resumen.reteRenta || 0).toFixed(2)}</td>
             </tr>
-        `;
-    }
-    
-    if (resumen.ivaRete1) {
-        htmlTotalesRows += `
             <tr style="color: #c2410c;">
                 <td>Retención IVA (1%):</td>
-                <td style="text-align: right;">-$${resumen.ivaRete1.toFixed(2)}</td>
+                <td style="text-align: right;">-$${(resumen.ivaRete1 || 0).toFixed(2)}</td>
             </tr>
-        `;
-    }
-    
-    if (resumen.ivaPerci1) {
-        htmlTotalesRows += `
             <tr style="color: #047857;">
                 <td>Percepción IVA (1%):</td>
-                <td style="text-align: right;">+$${resumen.ivaPerci1.toFixed(2)}</td>
+                <td style="text-align: right;">+$${(resumen.ivaPerci1 || 0).toFixed(2)}</td>
             </tr>
         `;
+    } else if (isFSE) {
+        htmlTotalesRows = `
+            <tr>
+                <td>Subtotal Compra:</td>
+                <td style="text-align: right;">$${(resumen.totalCompra || resumen.subTotal || 0).toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td>Descuento:</td>
+                <td style="text-align: right;">-$${(resumen.totalDescu || 0).toFixed(2)}</td>
+            </tr>
+            <tr style="color: #c2410c;">
+                <td>Retención Impuesto Renta (10%):</td>
+                <td style="text-align: right;">-$${(resumen.reteRenta || 0).toFixed(2)}</td>
+            </tr>
+        `;
+    } else {
+        htmlTotalesRows = `
+            <tr>
+                <td>Subtotal Ventas:</td>
+                <td style="text-align: right;">$${(resumen.subTotalVentas || resumen.subTotal || 0).toFixed(2)}</td>
+            </tr>
+        `;
+        if (resumen.totalDescu) {
+            htmlTotalesRows += `
+                <tr>
+                    <td>Descuento:</td>
+                    <td style="text-align: right;">-$${resumen.totalDescu.toFixed(2)}</td>
+                </tr>
+            `;
+        }
+        if (totalIva) {
+            htmlTotalesRows += `
+                <tr>
+                    <td>IVA (13%):</td>
+                    <td style="text-align: right;">$${parseFloat(totalIva).toFixed(2)}</td>
+                </tr>
+            `;
+        }
     }
     
+    const tieneRetenciones = isFSE || (isCCF && ((resumen.reteRenta || 0) > 0 || (resumen.ivaRete1 || 0) > 0));
     const labelTotal = tieneRetenciones ? 'LÍQUIDO A ENTREGAR:' : 'TOTAL A PAGAR:';
 
     // Formato de tabla de ítems
