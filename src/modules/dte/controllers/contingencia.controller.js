@@ -203,9 +203,68 @@ const regularizarManual = async (req, res, next) => {
     }
 };
 
+/**
+ * Limpiar la cola de contingencia (borrar todos los DTEs en estado CONTINGENCIA)
+ * POST /api/dte/v2/mi-cuenta/contingencia/limpiar
+ */
+const limpiarContingencia = async (req, res, next) => {
+    try {
+        const emisorId = req.emisor.id;
+        const { passwordApi } = req.body;
+
+        if (!passwordApi) {
+            throw new BadRequestError('La contraseña API de Hacienda es requerida para validar la operación.');
+        }
+
+        const emisor = await prisma.emisor.findUnique({
+            where: { id: emisorId },
+        });
+
+        if (!emisor) {
+            throw new BadRequestError('Emisor no encontrado.');
+        }
+
+        // Validar contraseña
+        const claveApiDecrypted = tenantService.desencriptar(emisor.mhClaveApi);
+        if (passwordApi !== claveApiDecrypted) {
+            throw new UnauthorizedError('Contraseña API de Hacienda incorrecta.');
+        }
+
+        // 1. Borrar todos los DTEs en estado CONTINGENCIA para este emisor
+        const resultado = await prisma.dte.deleteMany({
+            where: {
+                emisorId,
+                status: 'CONTINGENCIA',
+            },
+        });
+
+        logger.info(`Cola de contingencia LIMPIADA por el usuario para emisor ${emisor.nit}. Se eliminaron ${resultado.count} DTEs.`, { emisorId });
+
+        // Registrar en audit log para cumplir normas de auditoría y trazabilidad
+        const { auditLog } = require('../../../shared/middleware/audit-logger');
+        await auditLog(req, {
+            action: 'contingencia.limpiar',
+            resource: 'Emisor',
+            resourceId: emisorId,
+            details: { eliminados: resultado.count }
+        });
+
+        res.json({
+            exito: true,
+            mensaje: `Se eliminaron exitosamente ${resultado.count} documentos en cola de contingencia.`,
+            datos: {
+                eliminados: resultado.count
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     obtenerEstado,
     activarContingencia,
     desactivarContingencia,
     regularizarManual,
+    limpiarContingencia,
 };

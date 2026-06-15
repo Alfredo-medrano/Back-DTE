@@ -51,6 +51,7 @@ v2Router.get('/mi-cuenta/alertas-contingencia', miCuentaController.alertasContin
 v2Router.get('/mi-cuenta/contingencia', contingenciaController.obtenerEstado);
 v2Router.post('/mi-cuenta/contingencia/activar', requierePermisos('dte:create'), contingenciaController.activarContingencia);
 v2Router.post('/mi-cuenta/contingencia/desactivar', requierePermisos('dte:create'), contingenciaController.desactivarContingencia);
+v2Router.post('/mi-cuenta/contingencia/limpiar', requierePermisos('dte:create'), contingenciaController.limpiarContingencia);
 v2Router.post('/mi-cuenta/contingencia/regularizar', requierePermisos('dte:create'), contingenciaController.regularizarManual);
 
 // Facturación con validación + límite de plan
