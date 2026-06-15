@@ -46,6 +46,11 @@ const crearCCFSchema = z.object({
     }).optional(),
 
     datosPago: datosPagoSchema,
+
+    // Retenciones e impuestos especiales dinámicos
+    aplicarReteRenta: z.boolean().optional().default(false),
+    aplicarReteIva1: z.boolean().optional().default(false),
+    aplicarPerciIva1: z.boolean().optional().default(false),
 });
 
 /**
