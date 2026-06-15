@@ -59,6 +59,7 @@ const construirDocumento = ({ datos, emisor, tenantId }) => {
             datosExportacion,
             observaciones,
             datosPago,
+            ...datos,
         });
     } catch (buildError) {
         throw new Error(`Builder DTE-${tipoDte}: ${buildError.message}`);

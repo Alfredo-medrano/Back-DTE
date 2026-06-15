@@ -26,7 +26,7 @@ const { getFiscalLogic } = require('../constants');
  * Construye un documento Crédito Fiscal completo
  * @param {object} params - Parámetros del documento
  */
-const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1, datosPago = {} }) => {
+const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 1, datosPago = {}, aplicarReteRenta = false, aplicarReteIva1 = false, aplicarPerciIva1 = false }) => {
     const tipoDte = '03';
     const logic = getFiscalLogic(tipoDte);
 
@@ -36,7 +36,11 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
 
     // El calculador ya retorna el resumen correcto para CCF-03
     // (con ivaPerci1, sin totalIva, con pagos como array)
-    const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte, datosPago);
+    const resumen = calcularResumen(cuerpoDocumento, condicionOperacion, tipoDte, datosPago, {
+        aplicarReteRenta,
+        aplicarReteIva1,
+        aplicarPerciIva1,
+    });
 
     if (!receptor || !receptor.nrc || !(receptor.nit || receptor.numDocumento)) {
         throw new Error('DTE-03 (CCF): El receptor debe tener obligatoriamente NIT y NRC.');

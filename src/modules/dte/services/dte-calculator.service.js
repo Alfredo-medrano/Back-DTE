@@ -153,9 +153,10 @@ const calcularLineaProducto = (item, numItem, tipoDte = '01') => {
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
  * @param {string} tipoDte - Código del tipo de DTE
  * @param {object} [datosPago] - Datos de pago opcionales {codigo, referencia, plazo, periodo}
+ * @param {object} [opciones] - Opciones/banderas adicionales {aplicarReteRenta, aplicarReteIva1, aplicarPerciIva1}
  * @returns {object} Resumen formateado según Anexo II
  */
-const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', datosPago = {}) => {
+const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', datosPago = {}, opciones = {}) => {
     const logic = getFiscalLogic(tipoDte);
     const precioIncluyeIva = logic.calculaIvaInverso;
     const usaTributos = logic.usaTributos;
@@ -289,9 +290,34 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', 
     }
 
     // ══════════════════════════════════════════════════════════════
-    // FE-01 / CCF-03 / FEX-11: resumen extendido
+    // FE-01 / CCF-03 / FEX-11: resumen extendido con retenciones dinámicas
     // ══════════════════════════════════════════════════════════════
-    let montoTotalOperacion, reteRenta = new Decimal(0);
+    let ivaRete1 = new Decimal(0);
+    let ivaPerci1 = new Decimal(0);
+    let reteRenta = new Decimal(0);
+
+    // Calcular retenciones para CCF (03) según flags del usuario
+    if (tipoDte === '03') {
+        if (opciones.aplicarReteRenta) {
+            // Retención de Renta 10% sobre el subtotal de ítems tipo Servicio (tipoItem === 2)
+            const baseServicios = lineas
+                .filter(l => l.tipoItem === 2)
+                .reduce((sum, l) => sum.add(l.ventaGravada || 0), new Decimal(0));
+            reteRenta = baseServicios.mul(0.10).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        }
+        
+        if (opciones.aplicarReteIva1) {
+            // Retención de IVA 1% (Grandes Contribuyentes)
+            ivaRete1 = totalGravada.mul(0.01).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        }
+
+        if (opciones.aplicarPerciIva1) {
+            // Percepción de IVA 1% (Emisor Gran Contribuyente)
+            ivaPerci1 = totalGravada.mul(0.01).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        }
+    }
+
+    let montoTotalOperacion;
 
     if (precioIncluyeIva) {
         // FE (01): ventaGravada YA incluye IVA
@@ -304,22 +330,22 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', 
         montoTotalOperacion = subTotal.add(totalIva).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     }
 
-    const totalPagar = montoTotalOperacion.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    // totalPagar = montoTotalOperacion - ReteRenta - ReteIVA + PercepcionIVA
+    const totalPagar = montoTotalOperacion
+        .sub(reteRenta)
+        .sub(ivaRete1)
+        .add(ivaPerci1)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // ══════════════════════════════════════════════════════════════
     // PAGOS: Obligatorio como array para FE-01, CCF-03, FEX-11
-    // MH RECHAZA pagos: null — debe ser un array con al menos 1 elemento
-    // Venta a crédito (condicionOperacion: 2) requiere plazo y periodo
     // ══════════════════════════════════════════════════════════════
     const pagos = generarPagos(condicionOperacion, totalPagar.toNumber(), datosPago);
 
     // ══════════════════════════════════════════════════════════════
     // ESTRUCTURA DIFERENCIADA: FE-01 vs CCF-03
-    // FE-01: incluye totalIva, NO incluye ivaPerci1
-    // CCF-03: incluye ivaPerci1, NO incluye totalIva
     // ══════════════════════════════════════════════════════════════
     if (tipoDte === '03') {
-        // CCF-03: orden exacto según golden JSON del MH
         return {
             totalNoSuj: totalNoSuj.toNumber(),
             totalExenta: totalExenta.toNumber(),
@@ -332,8 +358,8 @@ const calcularResumenFactura = (lineas, condicionOperacion = 1, tipoDte = '01', 
             totalDescu: 0.00,
             tributos: tributosResumen,
             subTotal: subTotal.toNumber(),
-            ivaPerci1: 0.00,
-            ivaRete1: 0.00,
+            ivaPerci1: ivaPerci1.toNumber(),
+            ivaRete1: ivaRete1.toNumber(),
             reteRenta: reteRenta.toNumber(),
             montoTotalOperacion: montoTotalOperacion.toNumber(),
             totalNoGravado: 0.00,

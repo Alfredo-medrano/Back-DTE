@@ -170,10 +170,11 @@ const procesarItems = (items, tipoDte) => {
  * @param {number} condicionOperacion - 1=Contado, 2=Crédito, 3=Otro
  * @param {string} tipoDte - Tipo de DTE
  * @param {object} [datosPago] - Datos de pago {codigo, referencia, plazo, periodo}
+ * @param {object} [opciones] - Opciones/banderas adicionales {aplicarReteRenta, aplicarReteIva1, aplicarPerciIva1}
  * @returns {object} Resumen formateado
  */
-const calcularResumen = (cuerpoDocumento, condicionOperacion, tipoDte, datosPago = {}) => {
-    return calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte, datosPago);
+const calcularResumen = (cuerpoDocumento, condicionOperacion, tipoDte, datosPago = {}, opciones = {}) => {
+    return calcularResumenFactura(cuerpoDocumento, condicionOperacion, tipoDte, datosPago, opciones);
 };
 
 module.exports = {
