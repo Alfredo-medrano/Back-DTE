@@ -347,15 +347,24 @@ const enviarCorreoFactura = async ({ dte, emisor }) => {
                 const url = 'https://api.resend.com/emails';
                 
                 const resendAttachments = attachments.map(att => {
-                    const base64Content = Buffer.isBuffer(att.content)
-                        ? att.content.toString('base64')
-                        : typeof att.content === 'string'
-                            ? Buffer.from(att.content).toString('base64')
-                            : att.content;
-                    
+                    // Resend SIEMPRE requiere base64 — convertir según tipo de contenido:
+                    // - Buffer / Uint8Array → base64 directo
+                    // - string (JSON firmado) → convertir a Buffer primero, luego base64
+                    let base64Content;
+                    if (Buffer.isBuffer(att.content)) {
+                        base64Content = att.content.toString('base64');
+                    } else if (att.content instanceof Uint8Array) {
+                        base64Content = Buffer.from(att.content).toString('base64');
+                    } else if (typeof att.content === 'string') {
+                        base64Content = Buffer.from(att.content, 'utf-8').toString('base64');
+                    } else {
+                        // Fallback: serializar a JSON y convertir
+                        base64Content = Buffer.from(JSON.stringify(att.content), 'utf-8').toString('base64');
+                    }
+
                     return {
                         filename: att.filename,
-                        content: base64Content
+                        content: base64Content,
                     };
                 });
 
