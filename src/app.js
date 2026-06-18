@@ -141,8 +141,19 @@ app.get('/health', async (req, res) => {
 });
 
 // Deep health check — ISO 22301 Cláusula 8.4 (DRP)
-// Verifica todos los servicios externos para Plan de Recuperación ante Desastres
+// SECURITY FIX (C5): Requiere X-Admin-Key para acceder. Sin auth, este endpoint
+// exponía uptime, memoria del proceso, estado Docker e IPs de circuit breakers —
+// información suficiente para fingerprinting y planificación de ataques dirigidos.
 app.get('/health/deep', async (req, res) => {
+    const adminKey = req.headers['x-admin-key'];
+    if (!adminKey || adminKey !== process.env.ADMIN_SECRET_KEY) {
+        return res.status(401).json({
+            exito: false,
+            codigo: 'UNAUTHORIZED',
+            mensaje: 'Se requiere X-Admin-Key válida para acceder a este endpoint.',
+        });
+    }
+
     const checks = {
         database: 'unknown',
         dockerFirmador: 'unknown',
