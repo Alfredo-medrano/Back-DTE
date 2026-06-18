@@ -49,6 +49,19 @@ const register = async (req, res) => {
         // Normalizar NIT: quitar guiones para buscar en BD
         const nitLimpio = data.nit.replace(/-/g, '');
 
+        // SECURITY FIX (C4): El plan ILIMITADO no puede auto-seleccionarse en el
+        // registro público. Requiere activación manual por un administrador en el
+        // IAM panel (/admin/tenants) tras verificar el pago. Esto previene que un
+        // usuario emita millones de facturas sin haber pagado.
+        if (data.plan === 'ILIMITADO') {
+            return res.status(400).json({
+                exito: false,
+                codigo: 'PLAN_NO_PERMITIDO',
+                mensaje: 'El plan ILIMITADO requiere activación manual. Regístrate con un plan disponible y contacta a soporte para actualizar.',
+                planesDisponibles: ['BASICO', 'PROFESIONAL', 'EMPRESARIAL'],
+            });
+        }
+
         // ── 2. Verificar NIT no duplicado ──────────
         const emisorExistente = await prisma.emisor.findFirst({
             where: { nit: nitLimpio },
@@ -181,9 +194,18 @@ const register = async (req, res) => {
         // No devolver credenciales sensibles ni token en body
         const { mhClaveApi, mhClavePrivada, ...emisorSeguro } = emisor;
 
+        // SECURITY FIX (S6): Informar al frontend que el certificado PFX no está
+        // cargado aún. El emisor fue creado con mhClavePrivada='PENDIENTE_PFX' y
+        // no podrá firmar documentos hasta que se suba en el panel de configuración.
+        const certificatoPendiente = !emisor.mhPrivateKey && !emisor.mhCertificado;
+
         return res.status(201).json({
             exito: true,
             mensaje: 'Cuenta creada exitosamente. ¡Bienvenido al sistema DTE!',
+            certificatoPendiente,
+            ...(certificatoPendiente && {
+                alertaCertificado: 'Tu cuenta fue creada, pero necesitas cargar tu certificado PFX del Ministerio de Hacienda antes de poder emitir documentos. Ve a Mi Cuenta → Emisores → Cargar Certificado.',
+            }),
             tenant: {
                 id: tenant.id,
                 nombre: tenant.nombre,
