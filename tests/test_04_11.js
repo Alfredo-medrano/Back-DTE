@@ -35,6 +35,7 @@ const inputNR = {
     receptor: {
         tipoDocumento: "36",
         numDocumento: "06142010980017",
+        correo: "cliente@nr.com",
         nombre: "CLIENTE NR",
         bienTitulo: "02"
     },
