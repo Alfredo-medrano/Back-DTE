@@ -59,7 +59,58 @@ const verificarEstado = async () => {
 };
 
 /**
- * Firma un documento DTE con el contenedor Docker (CASO B — Escritura/Borrado temporal)
+ * Adquiere un lock basado en directorio atómico (cross-process safe).
+ * @param {string} lockDir - Ruta del directorio del lock
+ * @returns {Promise<boolean>}
+ */
+const adquirirLock = async (lockDir) => {
+    const lockTimeout = 10000; // 10 segundos
+    for (let intento = 0; intento < 100; intento++) {
+        try {
+            fs.mkdirSync(lockDir);
+            return true;
+        } catch (err) {
+            if (err.code !== 'EEXIST') throw err;
+            
+            // Verificar si el lock quedó huérfano
+            try {
+                const stats = fs.statSync(lockDir);
+                const age = Date.now() - stats.mtimeMs;
+                if (age > lockTimeout) {
+                    logger.warn('Lock huérfano detectado, liberando...', { lockDir });
+                    try {
+                        fs.rmdirSync(lockDir);
+                    } catch (rmErr) {
+                        // Ignorar si ya fue borrado
+                    }
+                    continue; // Reintentar inmediatamente
+                }
+            } catch (statErr) {
+                // Si el lock fue borrado entre el fallo y el stat
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+    }
+    throw new Error(`No se pudo adquirir el lock para firmar después de múltiples intentos: ${lockDir}`);
+};
+
+/**
+ * Libera el lock de directorio de forma segura.
+ * @param {string} lockDir - Ruta del directorio del lock
+ */
+const liberarLock = (lockDir) => {
+    try {
+        if (lockDir && fs.existsSync(lockDir)) {
+            fs.rmdirSync(lockDir);
+        }
+    } catch (err) {
+        logger.error('Error al liberar lock de firma:', { error: err.message });
+    }
+};
+
+/**
+ * Firma un documento DTE con el contenedor Docker (CASO B — Escritura/Borrado temporal con LOCK de exclusión mutua)
  * @param {object} params - Parámetros de firma
  * @param {object} params.documento - Documento JSON a firmar
  * @param {string} params.nit - NIT del emisor
@@ -71,6 +122,7 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
     let certXml = null;
     let crtFilePath = null;
     let keyFilePath = null;
+    let lockDir = null;
 
     try {
         const nitDocker = nit.padStart(14, '0');
@@ -117,13 +169,12 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             fs.mkdirSync(certsDir, { recursive: true });
         }
 
-        // SECURITY FIX (S1): UUID en nombre de archivo evita colisiones entre
-        // workers de PM2 en modo cluster (race condition al escribir/borrar).
-        // SECURITY FIX (C1): Logs temporales eliminados — exponían la passphrase
-        // MH en PM2 logs. Cualquier backup de logs comprometía todas las claves.
-        const opId = crypto.randomUUID();
-        crtFilePath = path.join(certsDir, `${nitDocker}-${opId}.crt`);
-        keyFilePath = path.join(certsDir, `${nitDocker}-${opId}.key`);
+        // LOCK MULTI-PROCESO: Evita colisiones de lectura/escritura/borrado en PM2 clusters
+        lockDir = path.join(certsDir, `${nitDocker}.lock`);
+        await adquirirLock(lockDir);
+
+        crtFilePath = path.join(certsDir, `${nitDocker}.crt`);
+        keyFilePath = path.join(certsDir, `${nitDocker}.key`);
 
         fs.writeFileSync(crtFilePath, certXml, 'utf8');
         fs.writeFileSync(keyFilePath, keyDer);
@@ -180,10 +231,16 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             logger.error('Error al eliminar archivos temporales de firma:', { error: unlinkError.message });
         }
 
-        // 5. Asignar null a las variables de llaves en memoria
+        // 5. Liberar lock
+        if (lockDir) {
+            liberarLock(lockDir);
+        }
+
+        // 6. Asignar null a las variables de llaves en memoria e invalidar referencias
         certXml = null;
         crtFilePath = null;
         keyFilePath = null;
+        lockDir = null;
     }
 };
 
