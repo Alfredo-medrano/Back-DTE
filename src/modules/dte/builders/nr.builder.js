@@ -65,7 +65,7 @@ const construir = ({ emisor, receptor, items, correlativo, condicionOperacion = 
             //   tipoDocumento === "36" → nrc: ["string","null"]
             //   tipoDocumento !== "36" → nrc DEBE ser null
             tipoDocumento: receptor.tipoDocumento || '36',
-            numDocumento: receptor.numDocumento,
+            numDocumento: receptor.numDocumento || receptor.nit,
             nrc: String(receptor.tipoDocumento || '36') === '36' ? cleanNrc(receptor.nrc) : null,
             nombre: (receptor.nombre || '').toUpperCase(),
             codActividad: receptor.codActividad || null,
