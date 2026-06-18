@@ -45,6 +45,7 @@ v2Router.use(rateLimiter);
 v2Router.get('/mi-cuenta', miCuentaController.obtenerMiCuenta);
 v2Router.get('/mi-cuenta/emisores', miCuentaController.obtenerMisEmisores);
 v2Router.post('/mi-cuenta/emisores/:emisorId/certificado', miCuentaController.cargarCertificado);
+v2Router.put('/mi-cuenta/emisores/:emisorId', requierePermisos('dte:create'), miCuentaController.actualizarEmisor);
 v2Router.get('/mi-cuenta/api-keys', miCuentaController.listarMisApiKeys);
 v2Router.post('/mi-cuenta/api-keys', miCuentaController.crearMiApiKey);
 v2Router.delete('/mi-cuenta/api-keys/:apiKeyId', miCuentaController.revocarMiApiKey);
@@ -73,6 +74,7 @@ v2Router.post('/factura/:codigoGeneracion/anular',
 
 // Consultas y Conciliación
 v2Router.get('/facturas', requierePermisos('dte:read'), dteController.listarFacturas);
+v2Router.get('/productos', requierePermisos('dte:read'), dteController.obtenerProductos);
 v2Router.get('/factura/:codigoGeneracion', requierePermisos('dte:read'), dteController.consultarFactura);
 v2Router.get('/factura/:codigoGeneracion/pdf', requierePermisos('dte:read'), dteController.descargarFacturaPDF);
 v2Router.post('/factura/:codigoGeneracion/conciliar', requierePermisos('dte:create'), dteController.conciliarFactura);

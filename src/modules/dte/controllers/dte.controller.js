@@ -842,6 +842,29 @@ const descargarFacturaPDF = async (req, res, next) => {
     }
 };
 
+/**
+ * Obtener catálogo de productos oficial
+ * GET /api/dte/v2/productos
+ */
+const obtenerProductos = async (req, res, next) => {
+    try {
+        const productos = [
+            { codigo: 'SERV-001', descripcion: 'Servicio de Consultoría Empresarial (hora)', precioUnitario: 75.00, uniMedida: 99 },
+            { codigo: 'PROD-100', descripcion: 'Laptop Dell Latitude 5540 i7 16GB', precioUnitario: 1250.00, uniMedida: 59 },
+            { codigo: 'PROD-101', descripcion: 'Monitor Samsung 27" 4K UHD', precioUnitario: 385.00, uniMedida: 59 },
+            { codigo: 'SERV-002', descripcion: 'Desarrollo de Software a Medida (hora)', precioUnitario: 55.00, uniMedida: 99 },
+            { codigo: 'PROD-200', descripcion: 'Resma de Papel Bond Carta (500 hojas)', precioUnitario: 4.50, uniMedida: 59 },
+            { codigo: 'PROD-201', descripcion: 'Toner HP LaserJet 26A Original', precioUnitario: 68.00, uniMedida: 59 },
+        ];
+        res.json({
+            exito: true,
+            datos: productos
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     crearFactura,
     listarFacturas,
@@ -854,4 +877,5 @@ module.exports = {
     probarFirma,
     probarAutenticacion,
     anularDTE,
+    obtenerProductos,
 };

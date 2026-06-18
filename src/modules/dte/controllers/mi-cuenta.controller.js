@@ -269,6 +269,68 @@ const cargarCertificado = async (req, res, next) => {
     });
 };
 
+
+/**
+ * Actualizar datos de un emisor del tenant
+ * PUT /api/dte/v2/mi-cuenta/emisores/:emisorId
+ */
+const actualizarEmisor = async (req, res, next) => {
+    try {
+        const { emisorId } = req.params;
+        const tenantId = req.tenant.id;
+        const {
+            nombreComercial,
+            codActividad,
+            descActividad,
+            departamento,
+            municipio,
+            complemento,
+            telefono,
+            correo,
+            codEstableMH,
+            codPuntoVentaMH,
+            tipoEstablecimiento,
+        } = req.body;
+
+        // 1. Validar pertenencia del emisor
+        const emisor = await prisma.emisor.findUnique({
+            where: { id: emisorId }
+        });
+
+        if (!emisor || emisor.tenantId !== tenantId) {
+            throw new NotFoundError('Emisor no encontrado o no pertenece a esta cuenta.');
+        }
+
+        // 2. Actualizar en la base de datos
+        const emisorActualizado = await prisma.emisor.update({
+            where: { id: emisorId },
+            data: {
+                nombreComercial: nombreComercial !== undefined ? nombreComercial : undefined,
+                codActividad: codActividad !== undefined ? codActividad : undefined,
+                descActividad: descActividad !== undefined ? descActividad : undefined,
+                departamento: departamento !== undefined ? departamento : undefined,
+                municipio: municipio !== undefined ? municipio : undefined,
+                complemento: complemento !== undefined ? complemento : undefined,
+                telefono: telefono !== undefined ? telefono : undefined,
+                correo: correo !== undefined ? correo : undefined,
+                codEstableMH: codEstableMH !== undefined ? codEstableMH : undefined,
+                codPuntoVentaMH: codPuntoVentaMH !== undefined ? codPuntoVentaMH : undefined,
+                tipoEstablecimiento: tipoEstablecimiento !== undefined ? tipoEstablecimiento : undefined,
+            }
+        });
+
+        logger.info(`Emisor ${emisorId} actualizado por el tenant ${tenantId}`);
+
+        res.json({
+            exito: true,
+            mensaje: 'Datos del emisor actualizados correctamente.',
+            emisor: emisorActualizado
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     obtenerMiCuenta,
     obtenerMisEmisores,
@@ -277,4 +339,5 @@ module.exports = {
     revocarMiApiKey,
     alertasContingencia,
     cargarCertificado,
+    actualizarEmisor,
 };
