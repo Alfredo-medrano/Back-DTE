@@ -11,7 +11,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { dteController, statusController, miCuentaController, contingenciaController } = require('./controllers');
+const { dteController, statusController, miCuentaController, contingenciaController, clientesController } = require('./controllers');
 const {
     tenantContext,
     requierePermisos,
@@ -83,6 +83,14 @@ v2Router.get('/estadisticas', requierePermisos('dte:read'), dteController.estadi
 // información sensible del tenant, incluyendo clientes con plan BASICO.
 v2Router.post('/test-firma', requierePermisos('dte:create'), dteController.probarFirma);
 v2Router.get('/test-auth', requierePermisos('dte:read'), dteController.probarAutenticacion);
+
+// ── CRM: Directorio de Clientes ──────────────────────────────────────────
+// Deriva clientes de los receptores únicos de DTEs + overrides manuales.
+// Multi-device safe: datos persisten en la BD del servidor.
+v2Router.get('/clientes',           requierePermisos('dte:read'),   clientesController.listarClientes);
+v2Router.post('/clientes',          requierePermisos('dte:create'), clientesController.crearCliente);
+v2Router.put('/clientes/:clienteId', requierePermisos('dte:create'), clientesController.actualizarCliente);
+v2Router.delete('/clientes/:clienteId', requierePermisos('dte:create'), clientesController.eliminarCliente);
 
 // Montar rutas v2
 router.use('/v2', v2Router);
