@@ -56,7 +56,7 @@ Debes tener:
 ### 1. Clonar o descargar el proyecto
 
 ```bash
-cd d:\DTE-Planing\FAC-ELECTRONICA
+cd d:\TU\RUTA
 ```
 
 ### 2. Instalar dependencias
