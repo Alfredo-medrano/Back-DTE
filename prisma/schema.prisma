@@ -34,6 +34,7 @@ model Tenant {
   emisores Emisor[]
   apiKeys  ApiKey[]
   dtes     Dte[]
+  clientesCrm ClienteCrm[]
 
   @@map("tenants")
 }
@@ -271,4 +272,19 @@ model AuditLog {
   @@index([action, timestamp])
   @@index([resource, resourceId])
   @@map("audit_logs")
+}
+
+// ========================================
+// MODELO: CLIENTE CRM (Overrides manuales)
+// ========================================
+model ClienteCrm {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relaciones
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("clientes_crm")
 }
