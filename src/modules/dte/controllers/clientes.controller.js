@@ -85,8 +85,12 @@ const listarClientes = async (req, res, next) => {
         );
 
         // ── 3. Merge: manual override tiene prioridad sobre inferido ──────
-        const clientes = receptoresUnicos.map(r => {
+        const clientes = [];
+        for (const r of receptoresUnicos) {
             const override = manualesMap.get(r.receptorNumDoc);
+            if (override && override.data && override.data.deleted === true) {
+                continue; // Excluir clientes eliminados
+            }
             const base = {
                 id: `dte_${Buffer.from(r.receptorNumDoc).toString('base64url')}`,
                 _source: 'dte',
@@ -94,7 +98,6 @@ const listarClientes = async (req, res, next) => {
                 nit: r.receptorNumDoc,
                 nombre: r.receptorNombre,
                 correo: r.receptorCorreo || '',
-                // Campos que solo tiene si hay override manual
                 nrc: '',
                 telefono: '',
                 actividadEconomica: '',
@@ -105,15 +108,16 @@ const listarClientes = async (req, res, next) => {
             };
 
             if (override) {
-                return { ...base, ...override.data, id: override.id, _source: 'manual' };
+                clientes.push({ ...base, ...override.data, id: override.id, _source: 'manual' });
+            } else {
+                clientes.push(base);
             }
-            return base;
-        });
+        }
 
-        // Agregar clientes puramente manuales (sin facturas asociadas)
+        // Agregar clientes puramente manuales (sin facturas asociadas y no eliminados)
         const nitsDteSet = new Set(receptoresUnicos.map(r => r.receptorNumDoc));
         const soloManuales = (manualesRaw || [])
-            .filter(r => !nitsDteSet.has(r.data?.nit || r.data?.numDocumento))
+            .filter(r => r.data && r.data.deleted !== true && !nitsDteSet.has(r.data?.nit || r.data?.numDocumento))
             .map(r => ({ ...r.data, id: r.id, _source: 'manual' }));
 
         const total = clientes.length + soloManuales.length;
@@ -220,26 +224,71 @@ const actualizarCliente = async (req, res, next) => {
         if (!clienteId) throw new BadRequestError('clienteId es requerido');
 
         const updates = {};
-        const campos = ['nombre', 'nrc', 'correo', 'telefono', 'actividadEconomica', 'departamento', 'municipio', 'complemento', 'tipoDocumento'];
+        const campos = ['nombre', 'nrc', 'correo', 'telefono', 'actividadEconomica', 'departamento', 'municipio', 'complemento', 'tipoDocumento', 'nit'];
         campos.forEach(c => {
             if (req.body[c] !== undefined) {
                 updates[c] = String(req.body[c]).trim().substring(0, 500);
             }
         });
 
-        try {
-            const [result] = await prisma.$queryRaw`
+        let result = null;
+
+        if (clienteId.startsWith('dte_')) {
+            const base64Str = clienteId.substring(4);
+            const nit = Buffer.from(base64Str, 'base64url').toString('utf8');
+            const nitLimpio = nit.trim().replace(/-/g, '');
+
+            // Buscar si ya existe un override por este NIT
+            const [existing] = await prisma.$queryRaw`
+                SELECT id, data FROM clientes_crm
+                WHERE tenant_id = ${tenant.id} AND data->>'nit' = ${nitLimpio}
+                LIMIT 1
+            `.catch(() => []);
+
+            const existingData = existing ? existing.data : {};
+            const mergedData = {
+                ...existingData,
+                nit: nitLimpio,
+                nombre: (updates.nombre !== undefined ? updates.nombre : (existingData.nombre || req.body.nombre || '')).trim().substring(0, 250),
+                tipoDocumento: updates.tipoDocumento !== undefined ? updates.tipoDocumento : (existingData.tipoDocumento || req.body.tipoDocumento || '36'),
+                nrc: (updates.nrc !== undefined ? updates.nrc : (existingData.nrc || '')).trim().substring(0, 20),
+                correo: (updates.correo !== undefined ? updates.correo : (existingData.correo || '')).trim().toLowerCase().substring(0, 200),
+                telefono: (updates.telefono !== undefined ? updates.telefono : (existingData.telefono || '')).trim().substring(0, 30),
+                actividadEconomica: (updates.actividadEconomica !== undefined ? updates.actividadEconomica : (existingData.actividadEconomica || '')).trim().substring(0, 10),
+                departamento: (updates.departamento !== undefined ? updates.departamento : (existingData.departamento || '')).trim().substring(0, 5),
+                municipio: (updates.municipio !== undefined ? updates.municipio : (existingData.municipio || '')).trim().substring(0, 5),
+                complemento: (updates.complemento !== undefined ? updates.complemento : (existingData.complemento || '')).trim().substring(0, 500),
+                updatedAt: Date.now(),
+            };
+
+            const targetId = existing ? existing.id : null;
+
+            if (targetId) {
+                [result] = await prisma.$queryRaw`
+                    UPDATE clientes_crm
+                    SET data = ${JSON.stringify(mergedData)}::jsonb
+                    WHERE id = ${targetId} AND tenant_id = ${tenant.id}
+                    RETURNING id, data
+                `;
+            } else {
+                [result] = await prisma.$queryRaw`
+                    INSERT INTO clientes_crm (id, tenant_id, data, created_at)
+                    VALUES (gen_random_uuid()::text, ${tenant.id}, ${JSON.stringify(mergedData)}::jsonb, NOW())
+                    RETURNING id, data
+                `;
+            }
+        } else {
+            [result] = await prisma.$queryRaw`
                 UPDATE clientes_crm
                 SET data = data || ${JSON.stringify(updates)}::jsonb
                 WHERE id = ${clienteId} AND tenant_id = ${tenant.id}
                 RETURNING id, data
             `;
-            if (!result) throw new NotFoundError('Cliente no encontrado');
-            res.json({ exito: true, cliente: { id: result.id, ...result.data } });
-        } catch (dbError) {
-            if (dbError instanceof NotFoundError) throw dbError;
-            res.json({ exito: true, mensaje: 'Actualizado localmente (tabla pendiente de migración)' });
         }
+
+        if (!result) throw new NotFoundError('Cliente no encontrado');
+
+        res.json({ exito: true, cliente: { id: result.id, ...result.data, _source: 'manual' } });
     } catch (error) {
         next(error);
     }
@@ -256,13 +305,66 @@ const eliminarCliente = async (req, res, next) => {
 
         if (!clienteId) throw new BadRequestError('clienteId es requerido');
 
-        try {
-            await prisma.$queryRaw`
-                DELETE FROM clientes_crm
-                WHERE id = ${clienteId} AND tenant_id = ${tenant.id}
-            `;
-        } catch {
-            // Tabla no existe — no es error crítico
+        let nitToMarkDeleted = null;
+
+        if (clienteId.startsWith('dte_')) {
+            const base64Str = clienteId.substring(4);
+            nitToMarkDeleted = Buffer.from(base64Str, 'base64url').toString('utf8');
+        } else {
+            const [existing] = await prisma.$queryRaw`
+                SELECT data FROM clientes_crm WHERE id = ${clienteId} AND tenant_id = ${tenant.id}
+            `.catch(() => []);
+            if (existing && existing.data) {
+                nitToMarkDeleted = existing.data.nit || existing.data.numDocumento;
+            }
+        }
+
+        let hasDte = false;
+        if (nitToMarkDeleted) {
+            const nitLimpio = nitToMarkDeleted.trim().replace(/-/g, '');
+            const deletedData = {
+                nit: nitLimpio,
+                deleted: true,
+                deletedAt: Date.now()
+            };
+
+            // Verificar si existen DTEs para este cliente
+            const dteRecord = await prisma.dte.findFirst({
+                where: {
+                    tenantId: tenant.id,
+                    OR: [
+                        { receptorNumDoc: nitToMarkDeleted.trim() },
+                        { receptorNumDoc: nitLimpio }
+                    ]
+                },
+                select: { id: true }
+            });
+            hasDte = !!dteRecord;
+
+            if (hasDte) {
+                try {
+                    await prisma.$queryRaw`
+                        INSERT INTO clientes_crm (id, tenant_id, data, created_at)
+                        VALUES (gen_random_uuid()::text, ${tenant.id}, ${JSON.stringify(deletedData)}::jsonb, NOW())
+                        ON CONFLICT (tenant_id, (data->>'nit'))
+                        DO UPDATE SET data = EXCLUDED.data
+                    `;
+                } catch (dbError) {
+                    logger.error('Error al marcar cliente como eliminado en DB:', dbError.message);
+                }
+            }
+        }
+
+        // Si no tiene DTEs asociados, podemos borrar el override de clientes_crm
+        if (!hasDte) {
+            try {
+                await prisma.$queryRaw`
+                    DELETE FROM clientes_crm
+                    WHERE id = ${clienteId} AND tenant_id = ${tenant.id}
+                `;
+            } catch (dbError) {
+                logger.error('Error al borrar cliente de clientes_crm:', dbError.message);
+            }
         }
 
         res.json({ exito: true, mensaje: 'Cliente eliminado' });
