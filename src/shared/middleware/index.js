@@ -8,7 +8,7 @@ const { errorHandler } = require('./error-handler');
 const { requestLogger } = require('./request-logger');
 const { tenantContext, requierePermisos } = require('./tenant-context');
 const { validateSchema, validateDTE } = require('./validate-dto');
-const { rateLimiter, rateLimiterCustom } = require('./rate-limiter');
+const { rateLimiter, rateLimiterCustom, rateLimiterPublic } = require('./rate-limiter');
 const { auditLog, auditMiddleware } = require('./audit-logger');
 
 /**
@@ -41,6 +41,7 @@ module.exports = {
     // Rate Limiting
     rateLimiter,
     rateLimiterCustom,
+    rateLimiterPublic,
 
     // Audit
     auditLog,

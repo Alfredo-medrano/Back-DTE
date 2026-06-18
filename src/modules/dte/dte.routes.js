@@ -16,6 +16,7 @@ const {
     tenantContext,
     requierePermisos,
     rateLimiter,
+    rateLimiterPublic,
     validateDTE
 } = require('../../shared/middleware');
 const { checkPlanLimits } = require('../../modules/billing');
@@ -25,8 +26,10 @@ const { checkPlanLimits } = require('../../modules/billing');
 // ========================================
 router.get('/status', statusController.obtenerEstado);
 router.get('/ejemplo', dteController.generarEjemplo);
-router.get('/public/factura/:codigoGeneracion', rateLimiter, dteController.consultarFacturaPublica);
-router.get('/public/factura/:codigoGeneracion/pdf', rateLimiter, dteController.descargarFacturaPDF);
+// SECURITY FIX (C3): Usar rateLimiterPublic (por IP, 30 req/min) en lugar de
+// rateLimiter que dependía de req.tenant y hacía next() en rutas públicas.
+router.get('/public/factura/:codigoGeneracion', rateLimiterPublic, dteController.consultarFacturaPublica);
+router.get('/public/factura/:codigoGeneracion/pdf', rateLimiterPublic, dteController.descargarFacturaPDF);
 
 // ========================================
 // RUTAS PROTEGIDAS v2 (requieren API Key)
@@ -75,9 +78,11 @@ v2Router.get('/factura/:codigoGeneracion/pdf', requierePermisos('dte:read'), dte
 v2Router.post('/factura/:codigoGeneracion/conciliar', requierePermisos('dte:create'), dteController.conciliarFactura);
 v2Router.get('/estadisticas', requierePermisos('dte:read'), dteController.estadisticas);
 
-// Pruebas (con credenciales del tenant)
-v2Router.post('/test-firma', dteController.probarFirma);
-v2Router.get('/test-auth', dteController.probarAutenticacion);
+// SECURITY FIX (C2): Rutas de prueba requerían autenticación básica (tenantContext)
+// pero no verificaban permisos — cualquier API key podía firmar documentos o leer
+// información sensible del tenant, incluyendo clientes con plan BASICO.
+v2Router.post('/test-firma', requierePermisos('dte:create'), dteController.probarFirma);
+v2Router.get('/test-auth', requierePermisos('dte:read'), dteController.probarAutenticacion);
 
 // Montar rutas v2
 router.use('/v2', v2Router);

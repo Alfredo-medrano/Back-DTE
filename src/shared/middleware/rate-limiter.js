@@ -156,7 +156,56 @@ const rateLimiterCustom = (maxRequests = 100, windowMs = 60000) => {
     };
 };
 
+// ────────────────────────────────────────────────────────
+// Rate limiter por IP para rutas públicas (sin tenant)
+// SECURITY FIX (C3): El rateLimiter estándar hace next() si !req.tenant,
+// dejando las rutas públicas sin limitación real. Este middleware limita
+// directamente por IP y no depende del contexto de autenticación.
+// ────────────────────────────────────────────────────────
+const rateLimiterPublic = async (req, res, next) => {
+    const key = `public:${req.ip || 'unknown'}`;
+    const MAX_REQ = 30;  // 30 req/min por IP en rutas públicas
+    const WINDOW_SEC = 60;
+
+    try {
+        const result = await authRateLimiterBackend.consume(key, 1, {
+            points: MAX_REQ,
+            duration: WINDOW_SEC,
+        });
+
+        res.set({
+            'X-RateLimit-Limit': MAX_REQ,
+            'X-RateLimit-Remaining': result.remainingPoints,
+            'X-RateLimit-Reset': Math.ceil((Date.now() + result.msBeforeNext) / 1000),
+        });
+
+        next();
+    } catch (rateLimiterRes) {
+        if (rateLimiterRes instanceof Error) {
+            logger.error('PublicRateLimiter error, allowing request', { error: rateLimiterRes.message });
+            return next();
+        }
+
+        const segundosRestantes = Math.ceil(rateLimiterRes.msBeforeNext / 1000);
+
+        res.set({
+            'X-RateLimit-Limit': MAX_REQ,
+            'X-RateLimit-Remaining': 0,
+            'Retry-After': segundosRestantes,
+        });
+
+        return res.status(429).json({
+            exito: false,
+            error: {
+                mensaje: `Límite de consultas públicas excedido. Reintenta en ${segundosRestantes}s`,
+                codigo: 'RATE_LIMIT_PUBLIC',
+            },
+        });
+    }
+};
+
 module.exports = {
     rateLimiter,
     rateLimiterCustom,
+    rateLimiterPublic,
 };

@@ -13,6 +13,7 @@ const { ejecutarConCircuito } = require('../../../shared/utils/circuit-breaker')
 const logger = require('../../../shared/logger');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { prisma } = require('../../../shared/db');
 const { decrypt } = require('../../../shared/services/encryption.service');
 const { tenantService } = require('../../iam/services');
@@ -116,21 +117,18 @@ const firmarDocumento = async ({ documento, nit, clavePrivada, emisorId }) => {
             fs.mkdirSync(certsDir, { recursive: true });
         }
 
-        crtFilePath = path.join(certsDir, `${nitDocker}.crt`);
-        keyFilePath = path.join(certsDir, `${nitDocker}.key`);
+        // SECURITY FIX (S1): UUID en nombre de archivo evita colisiones entre
+        // workers de PM2 en modo cluster (race condition al escribir/borrar).
+        // SECURITY FIX (C1): Logs temporales eliminados — exponían la passphrase
+        // MH en PM2 logs. Cualquier backup de logs comprometía todas las claves.
+        const opId = crypto.randomUUID();
+        crtFilePath = path.join(certsDir, `${nitDocker}-${opId}.crt`);
+        keyFilePath = path.join(certsDir, `${nitDocker}-${opId}.key`);
 
         fs.writeFileSync(crtFilePath, certXml, 'utf8');
         fs.writeFileSync(keyFilePath, keyDer);
 
         logger.info('Enviando documento a firmar', { nit: nitDocker });
-
-        // Logs temporales solicitados para depuración
-        console.log('--- LOG TEMPORAL DE FIRMA ---');
-        console.log('CertsDir resuelto:', certsDir);
-        console.log('Archivos escritos en temp:', fs.existsSync(certsDir) ? fs.readdirSync(certsDir) : 'No existe directório');
-        console.log('Enviando NIT al Docker:', nitDocker);
-        console.log('Contraseña enviada al Docker (passwordPri):', passphrase);
-        console.log('-----------------------------');
 
         const payload = {
             nit: nitDocker,
