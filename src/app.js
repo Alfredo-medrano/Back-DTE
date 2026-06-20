@@ -12,7 +12,7 @@
 require('dotenv').config();
 // Restart
 const { validarEntorno } = require('./config/env-validator');
-// Force restart
+// Force restart - Redis configured at 2026-06-18
 
 // Validar entorno ANTES de inicializar cualquier otra cosa
 validarEntorno();
