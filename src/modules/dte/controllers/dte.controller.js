@@ -117,6 +117,17 @@ const crearFactura = async (req, res, next) => {
                 jsonOriginal: contRes.documentoDTE,
             });
 
+            // Liberar lock del plan
+            if (req.planLockKey) {
+                try {
+                    const { liberarLock } = require('../../../shared/utils/lock');
+                    await liberarLock(req.planLockKey);
+                    req.planLockKey = null;
+                } catch (lockErr) {
+                    logger.error('Error al liberar lock de plan en contingencia', { error: lockErr.message });
+                }
+            }
+
             const dteFinal = await dteRepository.actualizarEstado(dteCreado.id, {
                 status: 'CONTINGENCIA',
                 jsonFirmado: contRes.documentoFirmado,
@@ -195,6 +206,17 @@ const crearFactura = async (req, res, next) => {
                 },
             });
 
+            // Liberar lock del plan
+            if (req.planLockKey) {
+                try {
+                    const { liberarLock } = require('../../../shared/utils/lock');
+                    await liberarLock(req.planLockKey);
+                    req.planLockKey = null;
+                } catch (lockErr) {
+                    logger.error('Error al liberar lock de plan en builder error record', { error: lockErr.message });
+                }
+            }
+
             await dteRepository.actualizarEstado(dteErrorRecord.id, {
                 status: 'ERROR',
                 errorLog: constError.message,
@@ -233,6 +255,17 @@ const crearFactura = async (req, res, next) => {
 
         dteId = dteCreado.id;
         logger.info(`DTE guardado en BD`, { dteId, status: 'CREADO' });
+
+        // Liberar lock del plan
+        if (req.planLockKey) {
+            try {
+                const { liberarLock } = require('../../../shared/utils/lock');
+                await liberarLock(req.planLockKey);
+                req.planLockKey = null;
+            } catch (lockErr) {
+                logger.error('Error al liberar lock de plan en flujo normal', { error: lockErr.message });
+            }
+        }
 
         // ═══════════════════════════════════════
         // PASO 3: Firmar y enviar a Hacienda
@@ -353,6 +386,17 @@ const crearFactura = async (req, res, next) => {
             });
         }
     } catch (error) {
+        // Asegurar liberación del lock en caso de error
+        if (req.planLockKey) {
+            try {
+                const { liberarLock } = require('../../../shared/utils/lock');
+                await liberarLock(req.planLockKey);
+                req.planLockKey = null;
+            } catch (lockErr) {
+                logger.error('Error al liberar lock de plan en catch general', { error: lockErr.message });
+            }
+        }
+
         // Si ya guardamos en BD, marcar como ERROR
         if (dteId) {
             try {

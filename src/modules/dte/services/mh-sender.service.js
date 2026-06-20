@@ -52,6 +52,22 @@ if (redisUrl) {
     };
 }
 
+let incrementalEnvioId = Math.floor(Math.random() * 100);
+
+/**
+ * Genera un idEnvio numérico único y seguro para Hacienda.
+ * Combina Date.now() con el ID de la instancia de PM2 (o PID del proceso)
+ * y un contador incremental rotatorio para evitar colisiones en el mismo milisegundo.
+ * Mantiene el valor por debajo de Number.MAX_SAFE_INTEGER.
+ * @returns {number}
+ */
+const generarIdEnvio = () => {
+    incrementalEnvioId = (incrementalEnvioId + 1) % 100;
+    const instanceId = parseInt(process.env.NODE_APP_INSTANCE || String(process.pid), 10);
+    const workerOffset = (instanceId % 10) * 100;
+    return Date.now() * 1000 + workerOffset + incrementalEnvioId;
+};
+
 /**
  * Obtiene un token del caché o solicita uno nuevo
  * @param {object} credenciales - Credenciales del emisor
@@ -129,7 +145,7 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
 
         const payload = {
             ambiente,
-            idEnvio: Number(Date.now()),
+            idEnvio: generarIdEnvio(),
             version: parseInt(version),
             tipoDte,
             codigoGeneracion,
@@ -195,7 +211,7 @@ const enviarEventoContingencia = async ({ documentoFirmado, ambiente, version, c
 
         const payload = {
             ambiente,
-            idEnvio: Number(Date.now()),
+            idEnvio: generarIdEnvio(),
             version: parseInt(version || 3, 10),
             codigoGeneracion,
             documento: documentoFirmado,
@@ -273,7 +289,7 @@ const anularDTE = async ({ documentoAnulacion, ambiente, credenciales }) => {
 
         const payload = {
             ambiente,
-            idEnvio: Date.now(),
+            idEnvio: generarIdEnvio(),
             version: 2,
             documento: documentoAnulacion,
         };
