@@ -40,6 +40,11 @@ const REQUERIDAS = [
         minLength: 32,
         ejemplo: 'Generar con: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"',
     },
+    {
+        key: 'MASTER_ENCRYPTION_KEY',
+        descripcion: 'Clave maestra de encriptación de base de datos (exactamente 32 chars)',
+        exactLength: 32,
+    },
 ];
 
 const OPCIONALES_CON_ADVERTENCIA = [
@@ -76,6 +81,8 @@ const validarEntorno = () => {
             if (variable.ejemplo) errores.push(`      Ejemplo: ${variable.ejemplo}`);
         } else if (variable.minLength && valor.length < variable.minLength) {
             errores.push(`  ✗ ${variable.key} — debe tener al menos ${variable.minLength} caracteres (actual: ${valor.length})`);
+        } else if (variable.exactLength && valor.length !== variable.exactLength) {
+            errores.push(`  ✗ ${variable.key} — debe tener exactamente ${variable.exactLength} caracteres (actual: ${valor.length})`);
         }
     }
 
