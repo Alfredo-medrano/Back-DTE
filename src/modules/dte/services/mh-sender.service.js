@@ -56,7 +56,7 @@ if (redisUrl) {
  * Obtiene un token del caché o solicita uno nuevo
  * @param {object} credenciales - Credenciales del emisor
  * @param {string} credenciales.nit - NIT del emisor (usuario MH)
- * @param {string} credenciales.claveApi - Clave API de Hacienda
+ * @param {string} credenciales.claveApi - Clave de Hacienda
  * @returns {Promise<object>} Resultado de autenticación
  */
 const autenticar = async (credenciales) => {
@@ -92,7 +92,7 @@ const autenticar = async (credenciales) => {
             const newToken = response.data.body.token;
             // MH token expira a las 24 hrs. Lo guardamos 23 horas (82800 seg)
             await redis.set(cacheKey, newToken, 'EX', 82800);
-            
+
             logger.info('Token obtenido exitosamente', { nit });
             return { exito: true, token: newToken, mensaje: 'Autenticación exitosa' };
         }
@@ -166,8 +166,8 @@ const enviarDTE = async ({ documentoFirmado, ambiente, tipoDte, version, codigoG
         };
 
     } catch (error) {
-        logger.error('Error al enviar DTE', { 
-            nit: credenciales.nit, 
+        logger.error('Error al enviar DTE', {
+            nit: credenciales.nit,
             error: error.message,
             mhResponse: error.response?.data
         });
@@ -230,8 +230,8 @@ const enviarEventoContingencia = async ({ documentoFirmado, ambiente, version, c
         };
 
     } catch (error) {
-        logger.error('Error al enviar Evento de Contingencia', { 
-            nit: credenciales.nit, 
+        logger.error('Error al enviar Evento de Contingencia', {
+            nit: credenciales.nit,
             error: error.message,
             mhResponse: error.response?.data
         });
