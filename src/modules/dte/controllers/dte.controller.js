@@ -143,24 +143,65 @@ const crearFactura = async (req, res, next) => {
         // ═══════════════════════════════════════
         // PASO 1: Construir documento DTE
         // ═══════════════════════════════════════
-        const documentoDTE = dteOrchestrator.construirDocumento({
-            datos: {
-                receptor,
-                items,
+        let documentoDTE;
+        try {
+            documentoDTE = dteOrchestrator.construirDocumento({
+                datos: {
+                    receptor,
+                    items,
+                    tipoDte,
+                    correlativo,
+                    condicionOperacion: condicionOperacion || 1,
+                    documentoRelacionado: documentoRelacionado || null,
+                    datosExportacion: datosExportacion || {},
+                    observaciones: observaciones || null,
+                    datosPago: datosPago || {},
+                    aplicarReteRenta: aplicarReteRenta || false,
+                    aplicarReteIva1: aplicarReteIva1 || false,
+                    aplicarPerciIva1: aplicarPerciIva1 || false,
+                },
+                emisor: emisorConCredenciales,
+                tenantId: tenant.id,
+            });
+        } catch (constError) {
+            logger.error('Error construyendo documento DTE. Registrando DTE con estado ERROR en BD para conservar el correlativo.', { error: constError.message });
+            
+            const codGen = generarCodigoGeneracion();
+            const codEstablecimiento = (emisorConCredenciales.codEstableMH || 'M001') + (emisorConCredenciales.codPuntoVentaMH || 'P001');
+            const numCtrl = generarNumeroControl(tipoDte, codEstablecimiento, correlativo);
+            const fecha = generarFechaActual();
+            const hora = generarHoraEmision();
+
+            const dteErrorRecord = await dteRepository.crear({
+                tenantId: tenant.id,
+                emisorId: emisor.id,
+                codigoGeneracion: codGen,
+                numeroControl: numCtrl,
                 tipoDte,
-                correlativo,
-                condicionOperacion: condicionOperacion || 1,
-                documentoRelacionado: documentoRelacionado || null,
-                datosExportacion: datosExportacion || {},
-                observaciones: observaciones || null,
-                datosPago: datosPago || {},
-                aplicarReteRenta: aplicarReteRenta || false,
-                aplicarReteIva1: aplicarReteIva1 || false,
-                aplicarPerciIva1: aplicarPerciIva1 || false,
-            },
-            emisor: emisorConCredenciales,
-            tenantId: tenant.id,
-        });
+                version: 1,
+                ambiente: emisorConCredenciales.ambiente,
+                fechaEmision: fecha,
+                horaEmision: hora,
+                receptor: {
+                    tipoDocumento: receptor ? (receptor.tipoDocumento || '36') : '36',
+                    numDocumento: receptor ? (receptor.numDocumento || receptor.nit) : '00000000000000',
+                    nombre: receptor ? receptor.nombre : 'CONSUMIDOR FINAL',
+                    correo: receptor ? receptor.correo : null,
+                },
+                totales: {
+                    totalGravada: 0,
+                    totalIva: 0,
+                    totalPagar: 0,
+                },
+            });
+
+            await dteRepository.actualizarEstado(dteErrorRecord.id, {
+                status: 'ERROR',
+                errorLog: constError.message,
+            });
+
+            throw constError;
+        }
 
         // ═══════════════════════════════════════
         // PASO 2: Guardar en BD ANTES de enviar (Outbox)
@@ -784,9 +825,20 @@ const consultarFacturaPublica = async (req, res, next) => {
             throw new NotFoundError(`DTE no encontrado: ${codigoGeneracion}`);
         }
 
+        // Sanitizar PII (correo del receptor) del documento devuelto públicamente
+        let dteResponse = dteLocal.jsonOriginal || dteLocal;
+        if (dteResponse) {
+            // Clonar profundamente para evitar mutar referencias del ORM
+            dteResponse = JSON.parse(JSON.stringify(dteResponse));
+            if (dteResponse.receptor) {
+                delete dteResponse.receptor.correo;
+                delete dteResponse.receptor.correoElectronico;
+            }
+        }
+
         res.json({
             exito: true,
-            dte: dteLocal.jsonOriginal || dteLocal,
+            dte: dteResponse,
             local: {
                 status: dteLocal.status,
                 selloRecibido: dteLocal.selloRecibido,
