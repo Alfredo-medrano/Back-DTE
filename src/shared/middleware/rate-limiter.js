@@ -84,9 +84,8 @@ const rateLimiter = async (req, res, next) => {
             return next();
         }
 
-        const apiKeyId = req.headers.authorization?.substring(0, 20) || 'unknown';
+        const cacheKey = req.tenant.id || req.headers.authorization?.substring(0, 20) || req.ip || 'unknown';
         const limite = req.tenant.rateLimit || 100;
-        const cacheKey = apiKeyId;
 
         try {
             const rateLimiterRes = await rateLimiterBackend.consume(cacheKey, 1, { points: limite });
