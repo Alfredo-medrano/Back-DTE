@@ -75,7 +75,7 @@ const crearMiApiKey = async (req, res, next) => {
 
         res.status(201).json({
             exito: true,
-            mensaje: '⚠️ Guarda esta API Key de forma segura. No se mostrará de nuevo.',
+            mensaje: 'Guarda esta API Key de forma segura. No se mostrará de nuevo.',
             datos: {
                 id: apiKey.id,
                 nombre: apiKey.nombre,
