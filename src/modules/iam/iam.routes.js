@@ -68,9 +68,9 @@ router.post('/tenants/:tenantId/emisores', auditMiddleware('emisor.create', 'Emi
 // ────────────────────────────────────────────────────────
 router.post('/tenants/:tenantId/api-keys', auditMiddleware('apikey.create', 'ApiKey'), iamController.crearApiKey);
 router.get('/tenants/:tenantId/api-keys', iamController.listarApiKeys);
-// SECURITY: tenantId en la URL obliga el ownership check en el servicio.
-// Un JWT-admin solo revoca sus propias keys; X-Admin-Key puede revocar
-// cualquiera siempre que pase el tenantId correcto.
+// SECURITY: El tenantId en la URL obliga el control de propiedad en el servicio.
+// Dado que las rutas de administración requieren obligatoriamente X-Admin-Key,
+// esta operación se ejecuta exclusivamente bajo el contexto de administración global.
 router.delete('/tenants/:tenantId/api-keys/:apiKeyId', auditMiddleware('apikey.revoke', 'ApiKey'), iamController.revocarApiKey);
 
 module.exports = router;

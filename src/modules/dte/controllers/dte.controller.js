@@ -63,6 +63,14 @@ const crearFactura = async (req, res, next) => {
         // Obtener credenciales desencriptadas del emisor
         const emisorConCredenciales = await tenantService.obtenerEmisorConCredenciales(emisor.id);
 
+        if (!emisorConCredenciales.codEstableMH || !emisorConCredenciales.codPuntoVentaMH) {
+            logger.warn(`Advertencia: El emisor con NIT ${emisorConCredenciales.nit} no cuenta con códigos de establecimiento explícitos en BD. Se aplicarán valores por defecto ('M001'/'P001').`, {
+                emisorId: emisorConCredenciales.id,
+                codEstableMH: emisorConCredenciales.codEstableMH,
+                codPuntoVentaMH: emisorConCredenciales.codPuntoVentaMH
+            });
+        }
+
         // Obtener siguiente correlativo
         const correlativo = await tenantService.obtenerSiguienteCorrelativo(emisor.id, tipoDte);
 

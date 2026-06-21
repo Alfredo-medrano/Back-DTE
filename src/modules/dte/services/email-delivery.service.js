@@ -12,6 +12,8 @@ const nodemailer = require('nodemailer');
 const axios = require('axios');
 const logger = require('../../../shared/logger');
 const { generarPDF } = require('./pdf-generator.service');
+const { escapeHtml } = require('../../../shared/utils/html-escape');
+const config = require('../../../config/env');
 
 // Configuración SMTP desde variables de entorno
 const smtpHost = process.env.SMTP_HOST;
@@ -19,7 +21,7 @@ const smtpPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 2525;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 const smtpFrom = process.env.SMTP_FROM || '"Factura DTE" <notificaciones@dte-saas.com>';
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+const frontendUrl = config.frontendUrl;
 
 // Configuración Resend
 const resendApiKey = process.env.RESEND_API_KEY;
@@ -203,24 +205,24 @@ const generarPlantillaHtml = ({
             <p>Facturación Electrónica · El Salvador</p>
         </div>
         <div class="content">
-            <div class="greeting">Estimado/a ${receptorNombre},</div>
+            <div class="greeting">Estimado/a ${escapeHtml(receptorNombre)},</div>
             <div class="intro-text">
-                Le informamos que <strong>${emisorNombre}</strong> ha emitido un documento tributario electrónico a su favor. Este comprobante ha sido debidamente procesado, validado y sellado de forma oficial por el Ministerio de Hacienda de El Salvador.
+                Le informamos que <strong>${escapeHtml(emisorNombre)}</strong> ha emitido un documento tributario electrónico a su favor. Este comprobante ha sido debidamente procesado, validado y sellado de forma oficial por el Ministerio de Hacienda de El Salvador.
             </div>
             
             <div class="details-card">
                 <table class="details-table">
                     <tr>
                         <td class="label">Código Generación:</td>
-                        <td class="value mono">${codigoGeneracion}</td>
+                        <td class="value mono">${escapeHtml(codigoGeneracion)}</td>
                     </tr>
                     <tr>
                         <td class="label">Número de Control:</td>
-                        <td class="value mono">${numeroControl}</td>
+                        <td class="value mono">${escapeHtml(numeroControl)}</td>
                     </tr>
                     <tr>
                         <td class="label">Fecha de Emisión:</td>
-                        <td class="value">${fechaEmision}</td>
+                        <td class="value">${escapeHtml(fechaEmision)}</td>
                     </tr>
                     <tr>
                         <td colspan="2"><div class="divider"></div></td>
@@ -233,7 +235,7 @@ const generarPlantillaHtml = ({
             </div>
 
             <div class="btn-container">
-                <a href="${enlacePublico}" class="btn" target="_blank">Ver Representación Gráfica (PDF)</a>
+                <a href="${escapeHtml(enlacePublico)}" class="btn" target="_blank">Ver Representación Gráfica (PDF)</a>
             </div>
             
             <div class="legal-notice">

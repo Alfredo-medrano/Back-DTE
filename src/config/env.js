@@ -42,6 +42,9 @@ const config = {
         // SECURITY FIX (C5): No fallback to '00' in production
         ambiente: process.env.AMBIENTE || (process.env.NODE_ENV === 'production' ? undefined : '00'),
     },
+
+    // Frontend
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3001',
 };
 
 

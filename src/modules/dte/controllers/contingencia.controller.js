@@ -12,6 +12,39 @@ const { tenantService } = require('../../iam/services');
 const { BadRequestError, UnauthorizedError } = require('../../../shared/errors');
 const { generarTimestampEmision } = require('../../../shared/utils');
 const logger = require('../../../shared/logger');
+const circuitBreaker = require('../../../shared/utils/circuit-breaker');
+const crypto = require('crypto');
+
+let cachedConexionMH = null;
+let cachedAt = 0;
+const TTL_MS = 30000;
+
+const obtenerConexionMH = async () => {
+    const ahora = Date.now();
+    if (cachedConexionMH !== null && (ahora - cachedAt) < TTL_MS) {
+        return cachedConexionMH;
+    }
+
+    // Usar la señal en memoria del circuit breaker
+    const estados = circuitBreaker.estadoCircuitos();
+    if (estados.HACIENDA_MH) {
+        cachedConexionMH = estados.HACIENDA_MH.estado !== 'ABIERTO';
+        cachedAt = ahora;
+        return cachedConexionMH;
+    }
+
+    // Fallback: ping a Hacienda
+    try {
+        const axios = require('axios');
+        const config = require('../../../config/env');
+        const resp = await axios.get(`${config.mh.apiUrl}/seguridad/auth`, { timeout: 3000 });
+        cachedConexionMH = resp.status === 200 || resp.status === 405;
+    } catch (err) {
+        cachedConexionMH = err.response ? err.response.status !== 503 : false;
+    }
+    cachedAt = ahora;
+    return cachedConexionMH;
+};
 
 /**
  * Obtener estado de contingencia y conexión
@@ -34,18 +67,8 @@ const obtenerEstado = async (req, res, next) => {
             },
         });
 
-        // Verificar conexión con MH (Health check rápido o ping)
-        let conexionMH = false;
-        try {
-            const axios = require('axios');
-            const config = require('../../../config/env');
-            // Intentar conectar al endpoint auth
-            const resp = await axios.get(`${config.mh.apiUrl}/seguridad/auth`, { timeout: 3000 });
-            conexionMH = resp.status === 200 || resp.status === 405; // 405 Method Not Allowed es aceptable ya que es un GET
-        } catch (err) {
-            // Si responde con un estado HTTP distinto a 503, se asume online
-            conexionMH = err.response ? err.response.status !== 503 : false;
-        }
+        // Verificar conexión con MH (Health check con caché y circuit breaker)
+        const conexionMH = await obtenerConexionMH();
 
         res.json({
             exito: true,
@@ -81,9 +104,14 @@ const activarContingencia = async (req, res, next) => {
             where: { id: emisorId },
         });
 
-        // Validar contraseña
+        // Validar contraseña de forma timing-safe
         const claveApiDecrypted = tenantService.desencriptar(emisor.mhClaveApi);
-        if (passwordApi !== claveApiDecrypted) {
+        const passwordBuffer = Buffer.from(passwordApi, 'utf8');
+        const claveBuffer = Buffer.from(claveApiDecrypted, 'utf8');
+        const esValida = passwordBuffer.length === claveBuffer.length &&
+            crypto.timingSafeEqual(passwordBuffer, claveBuffer);
+
+        if (!esValida) {
             throw new UnauthorizedError('Contraseña API de Hacienda incorrecta.');
         }
 
@@ -133,9 +161,14 @@ const desactivarContingencia = async (req, res, next) => {
             where: { id: emisorId },
         });
 
-        // Validar contraseña
+        // Validar contraseña de forma timing-safe
         const claveApiDecrypted = tenantService.desencriptar(emisor.mhClaveApi);
-        if (passwordApi !== claveApiDecrypted) {
+        const passwordBuffer = Buffer.from(passwordApi, 'utf8');
+        const claveBuffer = Buffer.from(claveApiDecrypted, 'utf8');
+        const esValida = passwordBuffer.length === claveBuffer.length &&
+            crypto.timingSafeEqual(passwordBuffer, claveBuffer);
+
+        if (!esValida) {
             throw new UnauthorizedError('Contraseña API de Hacienda incorrecta.');
         }
 
@@ -224,9 +257,14 @@ const limpiarContingencia = async (req, res, next) => {
             throw new BadRequestError('Emisor no encontrado.');
         }
 
-        // Validar contraseña
+        // Validar contraseña de forma timing-safe
         const claveApiDecrypted = tenantService.desencriptar(emisor.mhClaveApi);
-        if (passwordApi !== claveApiDecrypted) {
+        const passwordBuffer = Buffer.from(passwordApi, 'utf8');
+        const claveBuffer = Buffer.from(claveApiDecrypted, 'utf8');
+        const esValida = passwordBuffer.length === claveBuffer.length &&
+            crypto.timingSafeEqual(passwordBuffer, claveBuffer);
+
+        if (!esValida) {
             throw new UnauthorizedError('Contraseña API de Hacienda incorrecta.');
         }
 

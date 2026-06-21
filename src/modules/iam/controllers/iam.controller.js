@@ -65,10 +65,7 @@ const listarTenants = async (req, res, next) => {
  */
 const obtenerTenant = async (req, res, next) => {
     try {
-        let { tenantId } = req.params;
-        if (tenantId === 'current') {
-            tenantId = req.tenantId || req.tenant?.id || req.body?.tenantId;
-        }
+        const { tenantId } = req.params;
         
         const tenant = await tenantService.obtenerPorId(tenantId);
 
@@ -123,10 +120,7 @@ const crearEmisor = async (req, res, next) => {
  */
 const listarEmisores = async (req, res, next) => {
     try {
-        let tenantId = req.params.tenantId;
-        if (tenantId === 'current') {
-            tenantId = req.tenantId || req.tenant?.id;
-        }
+        const { tenantId } = req.params;
 
         const tenant = await tenantService.obtenerPorId(tenantId);
         if (!tenant) throw new NotFoundError(`Tenant no encontrado: ${tenantId}`);
@@ -185,10 +179,7 @@ const crearApiKey = async (req, res, next) => {
  */
 const listarApiKeys = async (req, res, next) => {
     try {
-        let tenantId = req.params.tenantId;
-        if (tenantId === 'current' && req.tenantId) {
-            tenantId = req.tenantId;
-        }
+        const { tenantId } = req.params;
 
         const keys = await apiKeyService.listar(tenantId);
         res.json({ exito: true, datos: keys, total: keys.length });

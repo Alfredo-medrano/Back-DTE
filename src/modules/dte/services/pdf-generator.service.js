@@ -10,8 +10,10 @@
 const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const logger = require('../../../shared/logger');
+const { escapeHtml } = require('../../../shared/utils/html-escape');
+const config = require('../../../config/env');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
+const FRONTEND_URL = config.frontendUrl;
 
 /**
  * Extrae y normaliza el objeto DTE desde diferentes formatos posibles (JWS string, DB record, etc.)
@@ -209,7 +211,7 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
     const htmlItems = cuerpo.map(item => `
         <tr>
             <td style="text-align: center;">${item.cantidad}</td>
-            <td>${item.descripcion}</td>
+            <td>${escapeHtml(item.descripcion)}</td>
             <td style="text-align: right;">$${(item.precioUni || 0).toFixed(2)}</td>
             <td style="text-align: right;">$${(item.montoDescu || 0).toFixed(2)}</td>
             <td style="text-align: right;">$${((item.ventaGravada || item.compra) || 0).toFixed(2)}</td>
@@ -352,28 +354,28 @@ const generarHTMLFactura = (dte, qrDataUrl) => {
 <body>
     <div class="header">
         <div class="company-info">
-            <h1>${emisor.nombreComercial || emisor.nombre}</h1>
-            <p><span class="bold">Razón Social:</span> ${emisor.nombre}</p>
-            <p><span class="bold">NIT:</span> ${emisor.nit} | <span class="bold">NRC:</span> ${emisor.nrc || 'N/A'}</p>
-            <p><span class="bold">Actividad:</span> ${emisor.descActividad}</p>
-            <p><span class="bold">Email:</span> ${emisor.correo}</p>
+            <h1>${escapeHtml(emisor.nombreComercial || emisor.nombre)}</h1>
+            <p><span class="bold">Razón Social:</span> ${escapeHtml(emisor.nombre)}</p>
+            <p><span class="bold">NIT:</span> ${escapeHtml(emisor.nit)} | <span class="bold">NRC:</span> ${escapeHtml(emisor.nrc || 'N/A')}</p>
+            <p><span class="bold">Actividad:</span> ${escapeHtml(emisor.descActividad)}</p>
+            <p><span class="bold">Email:</span> ${escapeHtml(emisor.correo)}</p>
         </div>
         <div class="document-info">
             <h2>DOCUMENTO TRIBUTARIO ELECTRÓNICO</h2>
             <p><span class="bold">Tipo:</span> ${identificacion.tipoDte === '01' ? 'Factura Electrónica' : (identificacion.tipoDte === '03' ? 'Comprobante de Crédito Fiscal' : 'DTE-' + identificacion.tipoDte)}</p>
-            <p><span class="bold">Código Generación:</span><br>${identificacion.codigoGeneracion}</p>
-            <p><span class="bold">Número de Control:</span><br>${identificacion.numeroControl}</p>
-            <p><span class="bold">Fecha Emisión:</span> ${identificacion.fecEmi} ${identificacion.horEmi}</p>
+            <p><span class="bold">Código Generación:</span><br>${escapeHtml(identificacion.codigoGeneracion)}</p>
+            <p><span class="bold">Número de Control:</span><br>${escapeHtml(identificacion.numeroControl)}</p>
+            <p><span class="bold">Fecha Emisión:</span> ${escapeHtml(identificacion.fecEmi)} ${escapeHtml(identificacion.horEmi)}</p>
         </div>
     </div>
 
     <div class="receptor-info">
         <h3>Datos del Cliente</h3>
-        <p><span class="bold">Nombre:</span> ${receptor?.nombre || 'Consumidor Final'}</p>
-        <p><span class="bold">Documento:</span> ${receptor?.numDocumento || receptor?.nit || 'N/A'}</p>
-        ${receptor?.nrc ? '<p><span class="bold">NRC:</span> ' + receptor.nrc + '</p>' : ''}
-        ${receptor?.direccion ? '<p><span class="bold">Dirección:</span> ' + receptor.direccion.complemento + '</p>' : ''}
-        ${receptor?.correo ? '<p><span class="bold">Email:</span> ' + receptor.correo + '</p>' : ''}
+        <p><span class="bold">Nombre:</span> ${escapeHtml(receptor?.nombre || 'Consumidor Final')}</p>
+        <p><span class="bold">Documento:</span> ${escapeHtml(receptor?.numDocumento || receptor?.nit || 'N/A')}</p>
+        ${receptor?.nrc ? '<p><span class="bold">NRC:</span> ' + escapeHtml(receptor.nrc) + '</p>' : ''}
+        ${receptor?.direccion ? '<p><span class="bold">Dirección:</span> ' + escapeHtml(receptor.direccion.complemento) + '</p>' : ''}
+        ${receptor?.correo ? '<p><span class="bold">Email:</span> ' + escapeHtml(receptor.correo) + '</p>' : ''}
     </div>
 
     <table>
@@ -459,6 +461,7 @@ const generarPDF = async (dte) => {
         // 3. Lanzar Puppeteer y renderizar PDF usando singleton
         const browser = await getBrowser();
         page = await browser.newPage();
+        await page.setJavaScriptEnabled(false); // Defensa en profundidad: desactivar JS
         await page.setContent(html, { waitUntil: 'networkidle0' });
         
         const pdfBuffer = await page.pdf({
